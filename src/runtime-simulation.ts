@@ -1,0 +1,198 @@
+import { invoke } from "@tauri-apps/api/core";
+import {
+  connectRemote,
+  disconnectRemote,
+  getAudioSnapshot,
+  getRawInputSnapshot,
+  getRuntimeSnapshot,
+  listAudioEndpoints,
+  saveButtonMappings,
+  scanPairedRemotes,
+  stopRawInput,
+  testButtonMapping,
+  type PlatformSnapshot,
+} from "./lib/bridge";
+
+interface RuntimeSimulationReport {
+  passed: boolean;
+  platform?: string;
+  steps: string[];
+  error?: string;
+}
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+async function waitFor<T>(read: () => T | null, description: string): Promise<T> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const value = read();
+    if (value !== null) return value;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error(`等待 ${description} 超时`);
+}
+
+function buttonWithText(label: string): HTMLButtonElement | null {
+  return (
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim().includes(label) && !button.disabled,
+    ) ?? null
+  );
+}
+
+async function clickButton(label: string): Promise<void> {
+  const button = await waitFor(() => buttonWithText(label), `按钮“${label}”可用`);
+  button.click();
+}
+
+async function openPage(label: string, heading = label): Promise<void> {
+  const button = await waitFor(
+    () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>("nav button")).find(
+        (candidate) => candidate.textContent?.trim().includes(label),
+      ) ?? null,
+    `导航“${label}”`,
+  );
+  button.click();
+  await waitFor(
+    () => (document.querySelector("h1")?.textContent?.trim() === heading ? heading : null),
+    `页面“${heading}”`,
+  );
+}
+
+async function runJourney(steps: string[]): Promise<PlatformSnapshot> {
+  // 应用默认打开"配置按键"页，先导航到设置页完成连接旅程（合并页首个标题为连接遥控）。
+  await openPage("设置", "连接遥控");
+  const runtime = await getRuntimeSnapshot();
+  assert(runtime.platform.platform === "windows-ci-simulation", "应用未使用 Windows CI 仿真后端");
+  steps.push("Tauri WebView 通过真实 IPC 读取仿真运行快照");
+
+  await clickButton("扫描已配对设备");
+  await waitFor(
+    () => (document.body.textContent?.includes("找到 2 个已配对的小米遥控器") ? true : null),
+    "RC001/RC003 扫描结果",
+  );
+  const remotes = await scanPairedRemotes();
+  assert(remotes.length === 2, "仿真扫描没有同时返回 RC001 和 RC003");
+  assert(remotes.some((remote) => remote.model === "rc001"), "仿真扫描缺少 RC001");
+  assert(remotes.some((remote) => remote.model === "rc003"), "仿真扫描缺少 RC003");
+  steps.push("连接页面渲染 RC001/RC003 扫描结果");
+
+  const rc001 = remotes.find((remote) => remote.model === "rc001");
+  assert(rc001, "找不到 RC001 仿真设备");
+  const connection = await connectRemote(rc001.id);
+  assert(connection.phase === "ready", "RC001 仿真连接没有进入 ATVV 就绪");
+  assert(connection.capabilities?.sampleRate === 16_000, "RC001 仿真能力不是 16 kHz");
+  steps.push("RC001 连接 command 返回 16 kHz ATVV 就绪状态");
+
+  await waitFor(
+    () => (document.body.textContent?.includes("CABLE Input (CI Simulation)") ? true : null),
+    "仿真音频端点",
+  );
+  // 端点列表默认收起（用户每次只用一个）：自动选择后以"更换设备"入口呈现。
+  await waitFor(
+    () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some((button) =>
+        button.textContent?.trim().includes("更换设备"),
+      )
+        ? true
+        : null,
+    "自动选择仿真 CABLE Input",
+  );
+  const endpoints = await listAudioEndpoints();
+  assert(endpoints.length === 1, "仿真音频端点数量异常");
+  const audio = await getAudioSnapshot();
+  assert(audio.phase === "ready", "仿真音频端点没有进入 WASAPI 就绪");
+  assert(audio.selectedEndpointId === endpoints[0].id, "仿真 CABLE Input 没有被自动选择");
+  steps.push("连接页面首次检测并自动选择唯一的仿真 CABLE Input");
+
+  await openPage("配置按键", "按键映射");
+  await waitFor(
+    () => (document.body.textContent?.includes("按键监听已就绪") ? true : null),
+    "Raw Input 就绪状态（随应用自愈启动）",
+  );
+  const rawInput = await getRawInputSnapshot();
+  assert(rawInput.phase === "ready", "仿真 Raw Input 没有进入就绪");
+  assert(rawInput.semanticEdgeCount === 2, "仿真 Raw Input 语义边沿数量异常");
+  steps.push("按键页面随应用启动展示 Raw Input 仿真状态");
+  assert(
+    document.body.textContent?.includes("语音键"),
+    "按键画布没有渲染语音键卡片",
+  );
+  assert(
+    Array.from(document.querySelectorAll(".mapping-cell")).length === 36,
+    "按键画布没有渲染 12 键 × 3 触发方式的单元格",
+  );
+  steps.push("按键映射画布渲染 12 张按键卡与三列触发单元格");
+
+  await saveButtonMappings({
+    enabled: true,
+    actions: {
+      ok: {
+        single: { type: "shortcut", chord: { keys: ["left_control", "c"] } },
+        double: { type: "disabled" },
+        long: { type: "disabled" },
+      },
+    },
+  });
+  const sendInput = await testButtonMapping("ok", "single");
+  assert(sendInput.submittedBatches === 1, "仿真 SendInput 没有提交唯一批次");
+  assert(sendInput.submittedEvents === 4, "Ctrl+C 仿真没有生成四个按下/释放事件");
+  steps.push("映射保存、热加载和 SendInput 记录器通过真实 Tauri IPC");
+
+  steps.push("设置页同屏呈现连接遥控、权限与关于三组设置");
+
+  const darkTheme = await waitFor(
+    () =>
+      document.querySelector<HTMLInputElement>('input[name="theme-preference"][value="dark"]:not(:disabled)'),
+    "深色外观选项可用",
+  );
+  darkTheme.click();
+  await waitFor(
+    () => (document.documentElement.dataset.theme === "dark" ? true : null),
+    "深色外观应用",
+  );
+  assert(darkTheme.checked, "深色外观保存后没有保持选中");
+  assert(!document.querySelector('[role="alert"]'), "深色外观保存后显示错误");
+
+  const systemTheme = await waitFor(
+    () =>
+      document.querySelector<HTMLInputElement>('input[name="theme-preference"][value="system"]:not(:disabled)'),
+    "系统外观选项可用",
+  );
+  systemTheme.click();
+  await waitFor(() => (systemTheme.checked && !systemTheme.disabled ? true : null), "系统外观恢复");
+  assert(!document.querySelector('[role="alert"]'), "恢复系统外观后显示错误");
+  steps.push("设置页深色/系统外观经 Windows WebView、Tauri capability 与设置持久化闭环");
+
+  steps.push("底部导航两页（配置按键 / 设置）均在 Windows WebView 中完成导航和渲染");
+
+  const voice = await invoke<PlatformSnapshot>("run_runtime_simulation_voice_session");
+  assert(voice.connection.decodedSamples === 240, "40 + 80 字节语音没有解码为 240 个采样");
+  assert(voice.connection.generation === 1, "首次仿真语音会话代次不是 1");
+  assert(voice.connection.voiceState === "idle", "仿真语音排空后没有回到 idle");
+  assert(voice.audio.submittedSamples === 240, "仿真 WASAPI 没有提交完整 240 个采样");
+  steps.push("RC001 首次 STREAM_START → 40+80 AUDIO → STREAM_STOP → DRAIN 闭环完成");
+
+  await stopRawInput();
+  await disconnectRemote();
+  const finalSnapshot = await getRuntimeSnapshot();
+  assert(finalSnapshot.platform.connection.phase === "disconnected", "仿真连接没有释放");
+  assert(finalSnapshot.platform.rawInput.phase === "stopped", "仿真 Raw Input 没有停止");
+  steps.push("断开和停止 command 完成资源状态释放");
+  return voice;
+}
+
+export async function runRuntimeSimulationSmoke(): Promise<void> {
+  const report: RuntimeSimulationReport = { passed: false, steps: [] };
+  try {
+    const snapshot = await runJourney(report.steps);
+    report.passed = true;
+    report.platform = snapshot.platform;
+  } catch (error) {
+    report.error = error instanceof Error ? error.message : String(error);
+  }
+  await invoke("complete_runtime_simulation_smoke", { result: report });
+}

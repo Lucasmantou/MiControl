@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MiControl",
+  "version": "2.0.1",
+  "identifier": "app.micontrol.windows",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:2430",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MiControl",
+        "width": 1029,
+        "height": 732,
+        "minWidth": 1029,
+        "minHeight": 732,
+        "decorations": true,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "MiControl",
+    "category": "Productivity",
+    "shortDescription": "把 RC001/RC003 遥控器的语音和按键桥接到 Windows",
+    "longDescription": "MiControl Windows 版通过公开 Windows API 接收 RC001 和 RC003 遥控器的语音和普通按键。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/installer-hooks.nsh",
+        "uninstallerIcon": "icons/icon.ico",
+        "startMenuFolder": "MiControl"
+      }
+    }
+  }
+}

@@ -1,0 +1,489 @@
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+  color-scheme: light;
+  font-synthesis: none;
+  --accent: #5f62db;
+  --accent-dark: #4e51c5;
+  --accent-text: #3437a5;
+  --accent-muted-text: #565abf;
+  --accent-surface: rgba(95, 98, 219, 0.10);
+  --accent-surface-strong: rgba(95, 98, 219, 0.14);
+  --accent-border: rgba(95, 98, 219, 0.45);
+  --accent-hover: rgba(95, 98, 219, 0.10);
+  --text-primary: #1f2430;
+  --text-secondary: #697080;
+  --text-nav: #5c6270;
+  --text-control: #444a58;
+  --text-subtle-strong: #4b5262;
+  --text-on-accent: #ffffff;
+  --surface-canvas: #f4f5f8;
+  --sidebar: rgba(237, 238, 244, 0.94);
+  --card: rgba(255, 255, 255, 0.92);
+  --surface-subtle: #f6f7fa;
+  --surface-control: #f7f7fa;
+  --surface-raised: rgba(255, 255, 255, 0.72);
+  --surface-chip: rgba(255, 255, 255, 0.60);
+  --surface-hover: rgba(255, 255, 255, 0.78);
+  --border: rgba(31, 36, 48, 0.09);
+  --border-strong: rgba(31, 36, 48, 0.13);
+  --shadow-card: rgba(33, 38, 56, 0.055);
+  --shadow-control: rgba(31, 36, 48, 0.08);
+  --canvas-glow: rgba(111, 115, 238, 0.12);
+  --nav-hover: rgba(120, 126, 150, 0.08);
+  --muted: var(--text-secondary);
+  --warning: #b66d14;
+  --warning-text: #965a12;
+  --warning-strong: #754d16;
+  --warning-surface: #fff0d7;
+  --warning-surface-soft: #fff8eb;
+  --error-text: #9b312f;
+  --error-surface: #ffe9e8;
+  --success-text: #267148;
+  --success-surface: #e5f5eb;
+  --pending-text: #656b78;
+  --pending-surface: #e9eaf0;
+  --track: #eceef3;
+  --toggle-off: #c9cdd8;
+  --mapping-neutral: rgba(31, 36, 48, 0.06);
+  --mapping-line: rgba(105, 112, 128, 0.4);
+  --pressed: #ef9420;
+  --pressed-text: #b4611a;
+  --pressed-surface: rgba(239, 148, 32, 0.14);
+  --pressed-border: rgba(239, 148, 32, 0.65);
+  --info-text: #555c6a;
+  --info-surface: #f3f3ff;
+  --dot-pending: #989eaa;
+  --dot-warning: #e6a33e;
+  --dot-success: #49a66f;
+  --dot-active: #686ce1;
+  --dot-error: #d35e5b;
+  --data-button: #666bd5;
+  --empty-icon: #8b8fdc;
+  --toggle-thumb: #ffffff;
+  --toggle-shadow: rgba(20, 25, 40, 0.25);
+  --pressed-ring: rgba(239, 148, 32, 0.55);
+}
+
+/* 深色 = 科技风：深空蓝黑底 + 小米橙霓虹强调（MiControl 品牌色），
+   状态色取高饱和霓虹值，配合下方暗色专属的网格/光晕效果块。 */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #ff7a18;
+  --accent-dark: #ff8c33;
+  --accent-text: #ffa45c;
+  --accent-muted-text: #ff9a4d;
+  --accent-surface: rgba(255, 122, 24, 0.13);
+  --accent-surface-strong: rgba(255, 122, 24, 0.20);
+  --accent-border: rgba(255, 140, 60, 0.55);
+  --accent-hover: rgba(255, 122, 24, 0.12);
+  --text-primary: #eef2f9;
+  --text-secondary: #9aa5bd;
+  --text-nav: #a8b2c8;
+  --text-control: #dbe2f0;
+  --text-subtle-strong: #c4cde0;
+  --text-on-accent: #1d0e02;
+  --surface-canvas: #0b0f17;
+  --sidebar: rgba(13, 17, 27, 0.94);
+  --card: rgba(19, 25, 37, 0.90);
+  --surface-subtle: #141b29;
+  --surface-control: #1a2233;
+  --surface-raised: rgba(29, 37, 55, 0.92);
+  --surface-chip: rgba(25, 32, 48, 0.85);
+  --surface-hover: rgba(42, 52, 76, 0.92);
+  --border: rgba(125, 148, 196, 0.16);
+  --border-strong: rgba(138, 160, 210, 0.30);
+  --shadow-card: rgba(1, 4, 12, 0.6);
+  --shadow-control: rgba(1, 4, 12, 0.7);
+  --canvas-glow: rgba(255, 122, 24, 0.08);
+  --nav-hover: rgba(140, 162, 214, 0.10);
+  --warning: #f0b766;
+  --warning-text: #ffd08b;
+  --warning-strong: #ffd69b;
+  --warning-surface: #453520;
+  --warning-surface-soft: #38301f;
+  --error-text: #ffb4ad;
+  --error-surface: #432427;
+  --success-text: #8fe6b2;
+  --success-surface: #16332a;
+  --pending-text: #c3c6cf;
+  --pending-surface: #2b3242;
+  --track: #222b3f;
+  --toggle-off: #39435c;
+  --mapping-neutral: rgba(148, 170, 220, 0.07);
+  --mapping-line: rgba(150, 168, 212, 0.45);
+  --pressed: #ff9d42;
+  --pressed-text: #ffb877;
+  --pressed-surface: rgba(255, 157, 66, 0.15);
+  --pressed-border: rgba(255, 157, 66, 0.72);
+  --info-text: #b9c4dc;
+  --info-surface: #1a2135;
+  --dot-pending: #8b93a7;
+  --dot-warning: #ffc247;
+  --dot-success: #3ddc84;
+  --dot-active: #ffab5e;
+  --dot-error: #ff6161;
+  --data-button: #ff8c33;
+  --empty-icon: #8b98ba;
+  --toggle-thumb: #f5f7fb;
+  --toggle-shadow: rgba(0, 0, 0, 0.45);
+  --pressed-ring: rgba(255, 157, 66, 0.55);
+}
+
+/* ---- 科技风暗色专属效果（仅 data-theme="dark" 生效，浅色不受影响） ---- */
+/* 背景：橙/青双色氛围光 + 34px 细网格，营造"控制台"质感。 */
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(1100px 520px at 84% -6%, rgba(255, 122, 24, 0.075), transparent 62%),
+    radial-gradient(900px 520px at -12% 108%, rgba(41, 171, 255, 0.055), transparent 60%),
+    linear-gradient(rgba(122, 148, 205, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(122, 148, 205, 0.03) 1px, transparent 1px),
+    var(--surface-canvas);
+  background-size: auto, auto, 34px 34px, 34px 34px, auto;
+}
+/* 卡片底部一抹橙氛围光（很弱，避免满屏发光）。 */
+html[data-theme="dark"] .card {
+  box-shadow: 0 8px 30px var(--shadow-card), 0 0 28px -18px rgba(255, 122, 24, 0.5);
+}
+html[data-theme="dark"] .primary-button {
+  box-shadow: 0 0 18px -6px rgba(255, 122, 24, 0.7);
+}
+/* 侧栏选中项左侧 2px 橙色光条。 */
+html[data-theme="dark"] .nav-item.active {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+/* 遥控器照片背后一圈暖光，让它从深色背景里"立"起来。 */
+html[data-theme="dark"] .remote-photo {
+  box-shadow: 0 0 44px -10px rgba(255, 140, 60, 0.4);
+}
+/* 选中的映射卡 / 已连接状态点：霓虹辉光。 */
+html[data-theme="dark"] .mapping-card.selected {
+  box-shadow: 0 0 18px -6px rgba(255, 140, 60, 0.45);
+}
+html[data-theme="dark"] .status-dot.success {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--dot-success) 16%, transparent),
+    0 0 10px 1px color-mix(in srgb, var(--dot-success) 55%, transparent);
+}
+
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; min-width: 940px; min-height: 100%; margin: 0; }
+button, input { font: inherit; }
+/* 焦点环：默认保留浏览器原生 :focus-visible 行为（纯键盘、辅助技术或从未
+   使用指针的环境都能看到焦点指示），仅在最近一次交互是指针时抑制——
+   body.pointer-nav 由 src/lib/focus-modality.ts 维护。
+   Chromium 会在"最近输入模态=键盘"时让 :focus-visible 重新命中鼠标
+   点过的按钮——遥控器注入的快捷键（↑↓←→/Home 等）会把本窗口的
+   最近模态切为键盘，导致上次点过的侧栏项/按键格凭空出现焦点环
+   （配置为打开应用的按键不触发：启动目标应用使本窗口失焦）。
+   幽灵环的成因必然伴随一次指针交互，故按指针模态判定：既消除幽灵环，
+   也不剥夺非 Tab 导航用户的焦点指示。鼠标按下打开指针模态，Tab 关闭。 */
+button:focus-visible,
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+body.pointer-nav button:focus-visible,
+body.pointer-nav input:focus-visible { outline: none; }
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 82% 4%, var(--canvas-glow), transparent 28rem),
+    var(--surface-canvas);
+  font-size: 16px;
+}
+
+/* 底部导航：窗口底部一条横向 tab 栏（配置按键 / 设置），
+   选中 = 强调色 + 10% 背景（延续原侧栏的 Mac plain 按钮样式语言）。 */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.bottom-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--sidebar);
+  backdrop-filter: blur(24px);
+}
+.nav-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-nav);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.nav-item:hover { background: var(--nav-hover); }
+.nav-item.active { color: var(--accent); background: var(--accent-surface); }
+.nav-icon { width: 20px; height: 20px; display: block; }
+
+.content { flex: 1; min-width: 0; padding: 22px clamp(22px, 3vw, 40px) 26px; scrollbar-width: none; }
+.content::-webkit-scrollbar { display: none; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.page-header h1 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -0.4px; }
+/* 合并设置页：连接遥控 / 权限 / 关于三组之间用细分隔线分组。 */
+.settings-page > * + * { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 18px; }
+.two-column { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.85fr); gap: 14px; align-items: start; }
+.card { padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: 0 8px 30px var(--shadow-card); }
+.card h2 { margin: 0 0 5px; font-size: 16px; }
+.card p { line-height: 1.5; }
+.muted { color: var(--muted); }
+.card-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.button-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.error-text { margin: 10px 0 0; color: var(--error-text); font-size: 13.5px; }
+.primary-button, .secondary-button, .device-list button {
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+.primary-button { color: var(--text-on-accent); background: var(--accent); }
+.primary-button:hover { background: var(--accent-dark); }
+.secondary-button, .device-list button { color: var(--text-control); border-color: var(--border); background: var(--surface-control); }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+.badge { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.badge.pending { color: var(--pending-text); background: var(--pending-surface); }
+.badge.warning { color: var(--warning-text); background: var(--warning-surface); }
+.badge.success { color: var(--success-text); background: var(--success-surface); }
+.badge.active { color: var(--accent-text); background: var(--accent-surface); }
+.badge.error { color: var(--error-text); background: var(--error-surface); }
+.status-dot { display: inline-block; width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--dot-success); }
+.status-dot.pending { background: var(--dot-pending); }
+.status-dot.warning { background: var(--dot-warning); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-warning) 16%, transparent); }
+.status-dot.success { background: var(--dot-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-success) 16%, transparent); }
+.status-dot.active { background: var(--dot-active); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-active) 16%, transparent); }
+.status-dot.error { background: var(--dot-error); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-error) 16%, transparent); }
+.status-panel { display: flex; align-items: flex-start; gap: 11px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface-subtle); }
+.status-copy { min-width: 0; }
+.status-heading { display: flex; align-items: center; gap: 11px; }
+.status-panel strong, .status-panel small { display: block; }
+.status-panel strong { font-size: 14px; font-weight: 600; }
+.status-panel small { margin: 3px 0 0 20px; color: var(--muted); font-size: 13px; }
+.setting-list { margin-top: 10px; border-top: 1px solid var(--border); }
+.setting-list.compact { margin-top: 8px; }
+.setting-list.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
+.setting-list.two-col .setting-row { border-bottom: 1px solid var(--border); }
+.setting-row { display: flex; justify-content: space-between; gap: 20px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.setting-row strong { font-size: 13.5px; }
+.setting-row span { color: var(--muted); text-align: right; font-size: 13.5px; }
+.info-callout { margin-top: 10px; padding: 9px 12px; border-left: 3px solid var(--accent); border-radius: 7px; color: var(--info-text); background: var(--info-surface); line-height: 1.45; font-size: 13px; }
+.info-callout.warning { border-left-color: var(--warning); background: var(--warning-surface-soft); }
+/* 始终纵向堆叠：右卡宽度随窗口收缩，横排按钮行（nowrap）会在中窄窗口溢出裁切。 */
+.vb-cable-callout { display: flex; align-items: flex-start; flex-direction: column; gap: 8px; }
+.vb-cable-callout strong { color: var(--warning-strong); }
+.vb-cable-callout p { margin: 3px 0 0; }
+.vb-cable-callout .button-row { flex: 0 0 auto; justify-content: flex-start; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 18px; }
+.metric-card span { display: block; color: var(--muted); font-size: 13px; }
+.metric-card strong { display: inline-block; margin: 8px 8px 0 0; font-size: 30px; font-variant-numeric: tabular-nums; }
+.metric-card small { color: var(--muted); font-size: 13px; }
+.duration-card strong { font-size: 26px; }
+.statistics-header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.period-switch { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-raised); }
+.period-switch button { min-width: 66px; min-height: 30px; padding: 4px 12px; border: 0; border-radius: 8px; color: var(--text-control); background: transparent; cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.period-switch button.active { color: var(--text-on-accent); background: var(--accent); }
+.usage-chart-card { margin-top: 14px; }
+.usage-chart-card .card-title-row p { margin: 3px 0 0; font-size: 13px; }
+.chart-legend { display: flex; gap: 12px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 9px; height: 9px; border-radius: 999px; }
+.button-dot { background: var(--data-button); }
+.voice-dot { background: var(--dot-success); }
+.usage-day-list { display: grid; gap: 10px; margin-top: 14px; }
+.usage-day-row { display: grid; grid-template-columns: 90px minmax(160px, 1fr) 160px; align-items: center; gap: 14px; min-height: 30px; }
+.usage-day-label, .usage-day-value { font-size: 13px; }
+.usage-day-label { color: var(--text-control); font-weight: 600; }
+.usage-day-value { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.usage-bars { display: grid; gap: 5px; }
+.usage-bar-track { height: 7px; overflow: hidden; border-radius: 999px; background: var(--track); }
+.usage-bar { display: block; height: 100%; border-radius: inherit; }
+.button-bar { background: var(--data-button); }
+.voice-bar { background: var(--dot-success); }
+.empty-state { padding: 48px 20px; text-align: center; }
+.empty-icon { color: var(--empty-icon); font-size: 30px; }
+.empty-state h2 { margin-top: 12px; }
+.empty-state p { color: var(--muted); }
+.device-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.device-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 0; border-top: 1px solid var(--border); }
+.device-list strong, .device-list small { display: block; }
+.device-list small { margin-top: 2px; color: var(--muted); font-size: 13px; }
+.status-action { margin-left: auto; }
+.scan-summary { margin: 8px 0 0; font-size: 13px; }
+.operation-message { margin: 8px 0 0; color: var(--accent-muted-text); font-size: 13px; }
+.permission-list { padding: 4px 18px; }
+.permission-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.permission-row:last-child { border-bottom: 0; }
+.permission-row strong { font-size: 14px; }
+.permission-row p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+.permission-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--accent-text); background: var(--accent-surface); font-size: 12px; font-weight: 700; }
+.about-card { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.app-logo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: 14px; }
+.about-card p { margin: 3px 0 0; font-size: 13.5px; }
+.appearance-card { margin-bottom: 12px; }
+.appearance-card > .muted { margin: 3px 0 10px; font-size: 13.5px; }
+.theme-selector { width: fit-content; display: inline-grid; grid-template-columns: repeat(3, minmax(76px, 1fr)); gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); }
+.theme-option { position: relative; min-height: 32px; display: grid; place-items: center; padding: 5px 14px; border-radius: 7px; color: var(--text-secondary); cursor: pointer; font-size: 13.5px; font-weight: 600; transition: color 0.15s, background-color 0.15s, box-shadow 0.15s; }
+.theme-option:hover { color: var(--text-primary); background: var(--nav-hover); }
+.theme-option.selected { color: var(--text-on-accent); background: var(--accent); box-shadow: 0 2px 8px var(--shadow-control); }
+.theme-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+body.pointer-nav .theme-option:has(input:focus-visible) { outline: none; }
+.theme-option:has(input:disabled) { cursor: wait; opacity: 0.6; }
+.theme-option input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.appearance-card .appearance-note { margin: 8px 0 0; font-size: 12.5px; }
+.error-banner { margin-bottom: 20px; padding: 12px 14px; border-radius: 8px; color: var(--error-text); background: var(--error-surface); }
+
+/* ---- 按键映射页（Mac RemoteMappingCanvas 对标） ---- */
+/* 头部对齐 Mac mappingPage：标题 + 启用开关居左同行，遥控器状态最右。 */
+.mapping-title-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.buttons-page .page-header h1 { font-size: 24px; margin: 0; }
+.mapping-header-controls { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.device-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised); font-size: 13px; white-space: nowrap; }
+.toggle-row { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
+.toggle-input { appearance: none; -webkit-appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--toggle-off); position: relative; cursor: pointer; transition: background 0.15s; margin: 0; }
+.toggle-input:checked { background: var(--accent); }
+.toggle-input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--toggle-thumb); box-shadow: 0 1px 3px var(--toggle-shadow); transition: left 0.15s; }
+.toggle-input:checked::after { left: 16px; }
+/* 画布对齐 Mac RemoteMappingLayout：高度 570、宽度流式（占满容器，
+   卡宽 = clamp((容器宽-260)/2, 270, 300)）；容器不足最小画布 800px 时
+   （小于最小窗口 980 的恢复态窗口）按视口连续缩放兜底，左边原点。 */
+.mapping-canvas {
+  position: relative;
+  width: 100%;
+  min-width: 800px;
+  height: 570px;
+  margin-bottom: calc(-570px * (1 - var(--map-scale)));
+  flex: 0 0 auto;
+  --map-scale: min(1, (100vw - 152px) / 800px, 100vh / 640px);
+  transform: scale(var(--map-scale));
+  transform-origin: top left;
+}
+.mapping-connections { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.mapping-connections path { stroke: var(--mapping-line); stroke-width: 1; }
+.mapping-connections path.selected { stroke: var(--accent); stroke-width: 1.6; }
+.mapping-connections path.active { stroke: var(--pressed); stroke-width: 1.6; }
+.mapping-connections polygon { fill: var(--mapping-line); }
+.mapping-connections polygon.selected { fill: var(--accent); }
+.mapping-connections polygon.active { fill: var(--pressed); }
+/* 遥控器图无底板（PNG 自带透明背景）；连线画在图之上（z-index 高于照片）。 */
+.remote-photo { position: absolute; z-index: 1; width: 202px; height: 410px; margin: 0; border-radius: 14px; overflow: hidden; top: 80px; }
+.remote-photo img { width: 100%; height: 100%; object-fit: cover; user-select: none; }
+/* 锚点橙点对齐 Mac：8px 纯圆点（无光环）。 */
+.anchor-dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--pressed); opacity: 0; pointer-events: none; transition: opacity 0.06s; }
+.anchor-dot.visible { opacity: 1; }
+.mapping-card { position: absolute; height: 72px; padding: 6px 9px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--mapping-neutral); cursor: pointer; transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease; }
+.mapping-card.left { left: 0; }
+.mapping-card.right { right: 0; }
+.mapping-card:hover { background: var(--surface-hover); border-color: var(--accent-border); box-shadow: 0 3px 12px var(--shadow-control); }
+.mapping-card.selected { background: var(--accent-surface); border-color: var(--accent-border); }
+.mapping-card.active { background: var(--pressed-surface); border-color: var(--pressed-border); }
+.mapping-card.flashed { box-shadow: 0 0 0 2px var(--pressed-ring); }
+.mapping-card-title { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.mapping-card-title strong { font-size: 13px; font-weight: 600; }
+.mapping-icon { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent-text); }
+.mapping-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.mapping-cell { min-width: 0; padding: 4px 5px; border: 0; border-radius: 6px; background: var(--mapping-neutral); text-align: center; cursor: pointer; transition: background-color 0.15s ease, box-shadow 0.15s ease; }
+.mapping-cell:hover { background: var(--accent-surface); box-shadow: inset 0 0 0 1px var(--accent-surface-strong); }
+.mapping-cell small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.2; }
+/* 单行省略（完整文字放 title 悬停提示，Mac 同款 lineLimit(1)+help）。 */
+.mapping-cell span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapping-cell:first-child span { font-weight: 600; }
+.mapping-cell.set span { color: var(--accent-text); }
+.mapping-cell.editing { background: var(--accent-surface-strong); }
+.mapping-cell.flashed { background: var(--pressed-surface); }
+/* 暂不支持自定义的按键：禁用态（保留卡片与已配置显示，仅不可编辑）。 */
+.mapping-cell:disabled { cursor: not-allowed; opacity: 0.5; }
+.mapping-cell:disabled:hover { background: var(--mapping-neutral); }
+.voice-card { cursor: default; }
+.voice-card .mapping-card-title { margin-bottom: 3px; }
+.voice-badge { margin-left: auto; font-size: 12px; font-weight: 600; min-height: 20px; padding: 2px 6px; }
+.voice-badge.active { color: var(--pressed-text); background: var(--pressed-surface); }
+.voice-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.3; }
+.mapping-editor { margin-top: 10px; }
+.mapping-editor h2 { margin: 0 0 3px; }
+.mapping-editor .muted { font-size: 13px; margin: 0; }
+.preset-groups { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.preset-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* 动作分区（基础按键/系统与媒体/打开应用/自定义）：小节标题 + 芯片网格。 */
+.action-sections { margin-top: 12px; display: grid; gap: 12px; }
+.action-section-title { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+.action-section .preset-grid { margin-top: 6px; }
+.chip.add-app { border-style: dashed; color: var(--muted); }
+.chip.add-app:hover { color: inherit; }
+/* 编辑面板头部"禁用按键"按钮：当前格已禁用时的高亮态。 */
+.editor-disable-btn.is-active { border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-surface); font-weight: 600; }
+.chip { min-height: 30px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-chip); color: var(--text-primary); font-size: 13px; cursor: pointer; white-space: nowrap; transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, color 0.18s ease; }
+.chip:hover { border-color: var(--accent-border); background: var(--accent-hover); box-shadow: 0 2px 8px var(--shadow-control); transform: translateY(-1px); }
+.chip:active { transform: translateY(0); }
+.chip.selected { border-color: var(--accent-border); background: var(--accent-surface); font-weight: 600; color: var(--accent-text); box-shadow: 0 1px 5px var(--accent-surface); }
+.chip.group-label { cursor: default; font-weight: 600; color: var(--muted); background: transparent; border-style: dashed; }
+.custom-shortcut-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.capture-display { font-size: 13px; font-weight: 600; color: var(--accent-muted-text); }
+.safe-capture-toggle { margin-top: 10px; white-space: normal; }
+.safe-capture-hint { margin-left: 2px; font-size: 12.5px; }
+.editor-note { margin-top: 10px; font-size: 12.5px; }
+.mapping-footer { margin-top: 10px; display: flex; align-items: center; gap: 12px; padding: 11px 16px; flex-wrap: wrap; }
+.mapping-footer-status { display: flex; align-items: center; gap: 7px; font-size: 13px; flex-wrap: wrap; }
+.mapping-footer-status small { color: var(--muted); font-size: 12.5px; }
+.lock-hint { font-size: 12.5px; }
+.footer-listener-toggle { min-height: 24px; padding: 2px 10px; font-size: 12.5px; }
+.mapping-footer .button-row { margin-left: auto; }
+.mapping-status { margin: 10px 0 0; }
+.usage-hint-details { margin-top: 10px; font-size: 13px; }
+.usage-hint-details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.usage-hint-details ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; font-size: 13px; color: var(--text-subtle-strong); }
+.voice-hotkey-row { margin-top: 10px; }
+.voice-hotkey-row p { margin: 0; font-size: 13px; }
+.voice-hotkey-presets { justify-content: flex-start; margin-top: 8px; }
+.endpoint-list li small { font-size: 12.5px; }
+.endpoint-select-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.endpoint-count { font-size: 12.5px; }
+
+@media (max-width: 1020px) {
+  .content { padding: 20px 22px 26px; }
+  .two-column { grid-template-columns: 1fr; }
+  .usage-day-row { grid-template-columns: 82px minmax(120px, 1fr); }
+  .usage-day-value { grid-column: 2; text-align: left; }
+}
+
+@media (max-height: 760px) {
+  .content { padding-top: 16px; padding-bottom: 18px; }
+  .page-header { margin-bottom: 10px; }
+  .card { padding: 12px; }
+  .setting-row { padding: 7px 0; }
+  .permission-row { padding: 8px 0; }
+  .diagnostics-card { margin-top: 10px; }
+}
+
+@media (forced-colors: active) {
+  .card,
+  .theme-selector,
+  .mapping-card,
+  .chip,
+  .secondary-button,
+  .device-list button { border-color: CanvasText; }
+  .theme-option.selected,
+  .primary-button,
+  .period-switch button.active { color: HighlightText; background: Highlight; }
+  .status-dot,
+  .anchor-dot { forced-color-adjust: none; }
+}

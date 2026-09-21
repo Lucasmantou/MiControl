@@ -1,0 +1,1282 @@
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::thread;
+use std::time::Duration;
+use thiserror::Error;
+
+use crate::raw_input::RemoteButton;
+
+const MAX_CHORD_KEYS: usize = 4;
+
+/// Gap between consecutive edges of a held-chord submission (voice hold hotkey).
+///
+/// WeType 2.1.3.18 does not recognize Ctrl+Win injected as one zero-gap
+/// SendInput batch: the modifier DOWN edge and the second key DOWN edge must
+/// be separated in time, otherwise the voice session never starts. Per-event
+/// submission with a small gap triggers reliably; 20 ms was validated at 4/4
+/// (20/40/60 ms all 4/4, zero-gap batch 0/2; see
+/// docs/investigations/evidence/p and
+/// Testing\investigation\p-chord-gap-experiment.ps1, 2026-09-04). Keep this
+/// gap small: it sits on the critical path of every voice-key press.
+/// 80 ms = 字段验证稳定值（PR #16 release 4918d61）；20ms（cef24d3 2026-09-05）
+/// 在微信输入法钩子冷/节流状态下首按必失败——用户实证遥控器闲置后首按
+/// 失败、再按成功稳定复现（7 次发作取证 micontrol-diag.log 20:15-20:27）；
+/// 20ms 的"4/4 验证"全部为热状态连续测试，未覆盖冷态。回退恢复 80ms。
+/// "WeType 休眠"调查整体发生于 20ms 回归之后，其现象学与冷态拒绝一致。
+pub const HOLD_CHORD_EVENT_GAP: Duration = Duration::from_millis(80);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyCode {
+    Control,
+    LeftControl,
+    RightControl,
+    Shift,
+    LeftShift,
+    RightShift,
+    Alt,
+    LeftAlt,
+    RightAlt,
+    LeftWindows,
+    RightWindows,
+    Backspace,
+    Tab,
+    Enter,
+    Escape,
+    Space,
+    PageUp,
+    PageDown,
+    End,
+    Home,
+    Left,
+    Up,
+    Right,
+    Down,
+    Insert,
+    Delete,
+    Apps,
+    VolumeMute,
+    VolumeDown,
+    VolumeUp,
+    MediaPrev,
+    MediaNext,
+    MediaPlayPause,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Digit0,
+    Digit1,
+    Digit2,
+    Digit3,
+    Digit4,
+    Digit5,
+    Digit6,
+    Digit7,
+    Digit8,
+    Digit9,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+}
+
+impl KeyCode {
+    pub fn virtual_key(self) -> u16 {
+        match self {
+            Self::Backspace => 0x08,
+            Self::Tab => 0x09,
+            Self::Enter => 0x0D,
+            Self::Shift => 0x10,
+            Self::Control => 0x11,
+            Self::Alt => 0x12,
+            Self::Escape => 0x1B,
+            Self::Space => 0x20,
+            Self::PageUp => 0x21,
+            Self::PageDown => 0x22,
+            Self::End => 0x23,
+            Self::Home => 0x24,
+            Self::Left => 0x25,
+            Self::Up => 0x26,
+            Self::Right => 0x27,
+            Self::Down => 0x28,
+            Self::Insert => 0x2D,
+            Self::Delete => 0x2E,
+            Self::Digit0 => 0x30,
+            Self::Digit1 => 0x31,
+            Self::Digit2 => 0x32,
+            Self::Digit3 => 0x33,
+            Self::Digit4 => 0x34,
+            Self::Digit5 => 0x35,
+            Self::Digit6 => 0x36,
+            Self::Digit7 => 0x37,
+            Self::Digit8 => 0x38,
+            Self::Digit9 => 0x39,
+            Self::A => 0x41,
+            Self::B => 0x42,
+            Self::C => 0x43,
+            Self::D => 0x44,
+            Self::E => 0x45,
+            Self::F => 0x46,
+            Self::G => 0x47,
+            Self::H => 0x48,
+            Self::I => 0x49,
+            Self::J => 0x4A,
+            Self::K => 0x4B,
+            Self::L => 0x4C,
+            Self::M => 0x4D,
+            Self::N => 0x4E,
+            Self::O => 0x4F,
+            Self::P => 0x50,
+            Self::Q => 0x51,
+            Self::R => 0x52,
+            Self::S => 0x53,
+            Self::T => 0x54,
+            Self::U => 0x55,
+            Self::V => 0x56,
+            Self::W => 0x57,
+            Self::X => 0x58,
+            Self::Y => 0x59,
+            Self::Z => 0x5A,
+            Self::LeftWindows => 0x5B,
+            Self::RightWindows => 0x5C,
+            Self::Apps => 0x5D,
+            Self::F1 => 0x70,
+            Self::F2 => 0x71,
+            Self::F3 => 0x72,
+            Self::F4 => 0x73,
+            Self::F5 => 0x74,
+            Self::F6 => 0x75,
+            Self::F7 => 0x76,
+            Self::F8 => 0x77,
+            Self::F9 => 0x78,
+            Self::F10 => 0x79,
+            Self::F11 => 0x7A,
+            Self::F12 => 0x7B,
+            Self::LeftShift => 0xA0,
+            Self::RightShift => 0xA1,
+            Self::LeftControl => 0xA2,
+            Self::RightControl => 0xA3,
+            Self::LeftAlt => 0xA4,
+            Self::RightAlt => 0xA5,
+            Self::VolumeMute => 0xAD,
+            Self::VolumeDown => 0xAE,
+            Self::VolumeUp => 0xAF,
+            Self::MediaPrev => 0xB1,
+            Self::MediaNext => 0xB0,
+            Self::MediaPlayPause => 0xB3,
+        }
+    }
+
+    pub fn physical_scan_code(self) -> Option<(u16, bool)> {
+        Some(match self {
+            Self::Control | Self::LeftControl => (0x1D, false),
+            Self::RightControl => (0x1D, true),
+            Self::Shift | Self::LeftShift => (0x2A, false),
+            Self::RightShift => (0x36, false),
+            Self::Alt | Self::LeftAlt => (0x38, false),
+            Self::RightAlt => (0x38, true),
+            Self::LeftWindows => (0x5B, true),
+            Self::RightWindows => (0x5C, true),
+            _ => return None,
+        })
+    }
+
+    pub fn is_extended(self) -> bool {
+        matches!(
+            self,
+            Self::PageUp
+                | Self::PageDown
+                | Self::End
+                | Self::Home
+                | Self::Left
+                | Self::Up
+                | Self::Right
+                | Self::Down
+                | Self::Insert
+                | Self::Delete
+                | Self::Apps
+                | Self::VolumeMute
+                | Self::VolumeDown
+                | Self::VolumeUp
+                | Self::MediaPrev
+                | Self::MediaNext
+                | Self::MediaPlayPause
+                | Self::RightControl
+                | Self::RightAlt
+                | Self::LeftWindows
+                | Self::RightWindows
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyChord {
+    pub keys: Vec<KeyCode>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ButtonAction {
+    #[default]
+    Disabled,
+    Shortcut {
+        chord: KeyChord,
+    },
+    /// 打开/激活预设应用（Mac presetApplication 对齐；target = 预设 id）。
+    OpenApp {
+        target: String,
+    },
+    Scroll {
+        direction: ScrollDirection,
+        #[serde(default = "default_scroll_steps")]
+        steps: u16,
+    },
+    MouseClick {
+        kind: MouseClickKind,
+    },
+    MouseMove {
+        direction: MoveDirection,
+        distance: u16,
+    },
+}
+
+pub fn default_scroll_steps() -> u16 {
+    1
+}
+
+pub fn validate_mouse_amount(value: u16, maximum: u16) -> Result<(), SendInputError> {
+    if value == 0 || value > maximum {
+        return Err(SendInputError::Backend(format!(
+            "mouse amount must be within 1..={maximum}"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseClickKind {
+    Left,
+    Right,
+    DoubleLeft,
+    Middle,
+}
+
+impl MouseClickKind {
+    pub fn event_count(self) -> usize {
+        if self == Self::DoubleLeft {
+            4
+        } else {
+            2
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl MoveDirection {
+    pub fn offset(self, distance: u16) -> Result<(i32, i32), SendInputError> {
+        validate_mouse_amount(distance, 2000)?;
+        let distance = i32::from(distance);
+        Ok(match self {
+            Self::Up => (0, -distance),
+            Self::Down => (0, distance),
+            Self::Left => (-distance, 0),
+            Self::Right => (distance, 0),
+        })
+    }
+}
+
+pub fn send_click_with(
+    kind: MouseClickKind,
+    mut sender: impl FnMut(&[bool]) -> Result<usize, String>,
+) -> Result<usize, SendInputError> {
+    let edges = [false, true, false, true];
+    let events = &edges[..kind.event_count()];
+    let sent = sender(events).map_err(SendInputError::Backend)?;
+    if sent == events.len() {
+        return Ok(sent);
+    }
+    let cleanup = if sent < events.len() && sent % 2 == 1 {
+        match sender(&[true]) {
+            Ok(1) => "released",
+            _ => "release_failed",
+        }
+    } else {
+        "not_needed"
+    };
+    Err(SendInputError::Backend(format!(
+        "mouse click submitted {sent}/{} events cleanup={cleanup}",
+        events.len()
+    )))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDirection {
+    Up,
+    Down,
+}
+
+impl ScrollDirection {
+    pub fn wheel_delta(self) -> i32 {
+        match self {
+            Self::Up => 120,
+            Self::Down => -120,
+        }
+    }
+}
+
+pub fn send_wheel_with(
+    direction: ScrollDirection,
+    steps: u16,
+    mut sender: impl FnMut(i32) -> Result<usize, String>,
+) -> Result<usize, SendInputError> {
+    validate_mouse_amount(steps, 100)?;
+    let sent =
+        sender(direction.wheel_delta() * i32::from(steps)).map_err(SendInputError::Backend)?;
+    if sent != 1 {
+        return Err(SendInputError::Backend(format!(
+            "mouse wheel submission returned {sent}/1 events"
+        )));
+    }
+    Ok(sent)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonTrigger {
+    Single,
+    Double,
+    Long,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ButtonActions {
+    pub single: ButtonAction,
+    pub double: ButtonAction,
+    pub long: ButtonAction,
+}
+
+impl Default for ButtonActions {
+    fn default() -> Self {
+        Self {
+            single: ButtonAction::Disabled,
+            double: ButtonAction::Disabled,
+            long: ButtonAction::Disabled,
+        }
+    }
+}
+
+impl ButtonActions {
+    pub fn trigger(&self, trigger: ButtonTrigger) -> &ButtonAction {
+        match trigger {
+            ButtonTrigger::Single => &self.single,
+            ButtonTrigger::Double => &self.double,
+            ButtonTrigger::Long => &self.long,
+        }
+    }
+
+    /// 任一触发方式配置了动作：key_gate 以此决定是否吞掉该按键的原始键入。
+    pub fn any_configured(&self) -> bool {
+        self.single != ButtonAction::Disabled
+            || self.double != ButtonAction::Disabled
+            || self.long != ButtonAction::Disabled
+    }
+}
+
+/// 兼容旧版单动作映射文件（actions 值为 ButtonAction 而非三列 ButtonActions）：
+/// 旧格式动作迁移为单击列。ButtonAction 是内部标签 `{"type": ...}`，与三列
+/// 结构（single/double/long 键齐全）在 JSON 形状上无歧义。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum ButtonActionsWire {
+    Cells(ButtonActionsCells),
+    Legacy(ButtonAction),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ButtonActionsCells {
+    single: ButtonAction,
+    double: ButtonAction,
+    long: ButtonAction,
+}
+
+impl From<ButtonActionsWire> for ButtonActions {
+    fn from(wire: ButtonActionsWire) -> Self {
+        match wire {
+            ButtonActionsWire::Cells(cells) => Self {
+                single: cells.single,
+                double: cells.double,
+                long: cells.long,
+            },
+            ButtonActionsWire::Legacy(action) => Self {
+                single: action,
+                ..Self::default()
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ButtonMappings {
+    /// 自定义按键功能总开关（UI 的"启用自定义按键功能"）。
+    pub enabled: bool,
+    pub actions: BTreeMap<RemoteButton, ButtonActions>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub applications: Vec<crate::app_launcher::CustomAppPick>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+impl Default for ButtonMappings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            actions: BTreeMap::new(),
+            applications: Vec::new(),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ButtonMappings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Wire {
+            #[serde(default = "default_enabled")]
+            enabled: bool,
+            actions: Option<BTreeMap<RemoteButton, ButtonActionsWire>>,
+            #[serde(default)]
+            applications: Vec<crate::app_launcher::CustomAppPick>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let actions = wire
+            .actions
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(button, cell)| (button, ButtonActions::from(cell)))
+            .collect();
+        Ok(Self {
+            enabled: wire.enabled,
+            actions,
+            applications: wire.applications,
+        })
+    }
+}
+
+impl ButtonMappings {
+    /// 策略性不支持自定义的按键（全型号一致）：
+    /// - 返回/音量±：RC003 输入栈不可见（配置无法生效）；RC001 虽以
+    ///   VK 0xFF 厂商键可达且可直接归因，为保持两型号行为一致而不开放。
+    ///
+    /// 持久化层（[`Self::normalized`]）与引擎层（button_mapping 的
+    /// `set_mappings`）双重剥离，存量配置在加载/保存时自动清除。
+    pub(crate) fn without_unsupported_buttons(mut self) -> Self {
+        for button in [
+            RemoteButton::Back,
+            RemoteButton::VolumeUp,
+            RemoteButton::VolumeDown,
+        ] {
+            self.actions.remove(&button);
+        }
+        self
+    }
+
+    pub fn normalized(self) -> Result<Self, SendInputError> {
+        let mut this = self.without_unsupported_buttons();
+        this.applications = crate::registered_apps::normalize_library(this.applications)
+            .map_err(SendInputError::Backend)?;
+        for actions in this.actions.values_mut() {
+            for action in [&mut actions.single, &mut actions.double, &mut actions.long] {
+                if let ButtonAction::Shortcut { chord } = action {
+                    *chord = chord.clone().validated()?;
+                }
+                match action {
+                    ButtonAction::Scroll { steps, .. } => validate_mouse_amount(*steps, 100)?,
+                    ButtonAction::MouseMove { distance, .. } => {
+                        validate_mouse_amount(*distance, 2000)?
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(this)
+    }
+
+    pub fn actions(&self, button: RemoteButton) -> ButtonActions {
+        self.actions.get(&button).cloned().unwrap_or_default()
+    }
+
+    #[allow(dead_code)]
+    pub fn action(&self, button: RemoteButton) -> ButtonAction {
+        self.actions(button).single
+    }
+
+    pub fn action_for(&self, button: RemoteButton, trigger: ButtonTrigger) -> ButtonAction {
+        self.actions(button).trigger(trigger).clone()
+    }
+
+    /// 已配置（任意触发方式有动作）的按键位掩码：key_gate 的无锁快照。
+    pub fn mapped_mask(&self) -> u64 {
+        let mut mask = 0u64;
+        if !self.enabled {
+            return mask;
+        }
+        for (button, actions) in &self.actions {
+            if actions.any_configured() {
+                mask |= 1u64 << button.ordinal();
+            }
+        }
+        mask
+    }
+}
+
+/// 遥控器按键的"原生 Windows 动作"等价键：按键映射引擎的泄漏对冲依据
+/// （见 button_mapping.rs 与 2026-09-06 调查档案修复记录）。映射动作与
+/// 原生动作相同（如 右→右、确定→Enter）且该次按压走了泄漏路径（原始键
+/// 已进 OS）时，注入会被跳过——原生动作已交付，注入即双响应。
+/// 厂商键（返回/电源 VK 0xFF 族，Windows 无默认动作）、TV（OEM_3 `~/~）
+/// 无对应 KeyCode → None：这些键的映射动作无法由原生覆盖。
+pub fn native_key(button: RemoteButton) -> Option<KeyCode> {
+    Some(match button {
+        RemoteButton::Ok => KeyCode::Enter,
+        RemoteButton::Home => KeyCode::Home,
+        RemoteButton::Right => KeyCode::Right,
+        RemoteButton::Left => KeyCode::Left,
+        RemoteButton::Down => KeyCode::Down,
+        RemoteButton::Up => KeyCode::Up,
+        RemoteButton::Menu => KeyCode::Apps,
+        RemoteButton::VolumeMute => KeyCode::VolumeMute,
+        RemoteButton::VolumeUp => KeyCode::VolumeUp,
+        RemoteButton::VolumeDown => KeyCode::VolumeDown,
+        RemoteButton::Back | RemoteButton::Tv | RemoteButton::Power => return None,
+    })
+}
+
+impl KeyChord {
+    /// Windows 的锁屏是系统动作，不依赖当前前台窗口或键盘注入链路。
+    pub fn is_lock_workstation(&self) -> bool {
+        self.keys.len() == 2
+            && self.keys.contains(&KeyCode::L)
+            && (self.keys.contains(&KeyCode::LeftWindows)
+                || self.keys.contains(&KeyCode::RightWindows))
+    }
+
+    pub fn validated(self) -> Result<Self, SendInputError> {
+        if self.keys.is_empty() {
+            return Err(SendInputError::EmptyChord);
+        }
+        if self.keys.len() > MAX_CHORD_KEYS {
+            return Err(SendInputError::ChordTooLong(self.keys.len()));
+        }
+        for (index, key) in self.keys.iter().enumerate() {
+            if self.keys[..index].contains(key) {
+                return Err(SendInputError::DuplicateKey(*key));
+            }
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlannedKeyEvent {
+    pub key: KeyCode,
+    pub is_key_up: bool,
+}
+
+pub fn plan_key_down(chord: &KeyChord) -> Result<Vec<PlannedKeyEvent>, SendInputError> {
+    let chord = chord.clone().validated()?;
+    Ok(chord
+        .keys
+        .into_iter()
+        .map(|key| PlannedKeyEvent {
+            key,
+            is_key_up: false,
+        })
+        .collect())
+}
+
+pub fn plan_key_up(chord: &KeyChord) -> Result<Vec<PlannedKeyEvent>, SendInputError> {
+    let chord = chord.clone().validated()?;
+    Ok(chord
+        .keys
+        .into_iter()
+        .rev()
+        .map(|key| PlannedKeyEvent {
+            key,
+            is_key_up: true,
+        })
+        .collect())
+}
+
+pub fn plan_key_tap(chord: &KeyChord) -> Result<Vec<PlannedKeyEvent>, SendInputError> {
+    let mut events = plan_key_down(chord)?;
+    events.extend(plan_key_up(chord)?);
+    Ok(events)
+}
+
+pub fn send_key_tap_with(
+    chord: &KeyChord,
+    mut sender: impl FnMut(&[PlannedKeyEvent]) -> Result<usize, String>,
+) -> Result<usize, SendInputError> {
+    let down_events = plan_key_down(chord)?;
+    let up_events = plan_key_up(chord)?;
+    let mut events = down_events.clone();
+    events.extend_from_slice(&up_events);
+
+    let sent = match sender(&events) {
+        Ok(sent) => sent,
+        Err(error) => {
+            best_effort_release(down_events.iter().rev().map(|event| event.key), &mut sender);
+            return Err(SendInputError::Backend(error));
+        }
+    };
+    if sent == events.len() {
+        return Ok(sent);
+    }
+
+    if sent < down_events.len() {
+        best_effort_release(
+            down_events[..sent].iter().rev().map(|event| event.key),
+            &mut sender,
+        );
+    } else if sent < events.len() {
+        let delivered_ups = sent - down_events.len();
+        best_effort_release(
+            up_events[delivered_ups..].iter().map(|event| event.key),
+            &mut sender,
+        );
+    } else {
+        best_effort_release(down_events.iter().rev().map(|event| event.key), &mut sender);
+    }
+    Err(SendInputError::PartialDelivery {
+        sent,
+        expected: events.len(),
+    })
+}
+
+fn best_effort_release(
+    keys: impl Iterator<Item = KeyCode>,
+    sender: &mut impl FnMut(&[PlannedKeyEvent]) -> Result<usize, String>,
+) {
+    for key in keys {
+        let _ = sender(&[PlannedKeyEvent {
+            key,
+            is_key_up: true,
+        }]);
+    }
+}
+
+/// Submit pre-planned key edges (for example a held Ctrl+Win voice-hotkey
+/// chord) one event per SendInput call, sleeping `gap` between consecutive
+/// events. IME voice hotkeys (WeType) reject zero-gap batched chords, so the
+/// edges of a held chord must be spaced; 80 ms is the empirically validated
+/// gap (evidence/p). If an event fails to land, the events that did land are
+/// rolled back best-effort so a held hotkey never stays stuck.
+pub fn send_key_edges_spaced_with(
+    events: &[PlannedKeyEvent],
+    gap: Duration,
+    mut sender: impl FnMut(&[PlannedKeyEvent]) -> Result<usize, String>,
+) -> Result<usize, SendInputError> {
+    if events.is_empty() {
+        return Err(SendInputError::EmptyChord);
+    }
+    let mut delivered: Vec<KeyCode> = Vec::with_capacity(events.len());
+    for (index, event) in events.iter().enumerate() {
+        if index > 0 && !gap.is_zero() {
+            thread::sleep(gap);
+        }
+        let sent = match sender(std::slice::from_ref(event)) {
+            Ok(sent) => sent,
+            Err(error) => {
+                best_effort_release(delivered.iter().rev().copied(), &mut sender);
+                return Err(SendInputError::Backend(error));
+            }
+        };
+        if sent == 0 {
+            best_effort_release(delivered.iter().rev().copied(), &mut sender);
+            return Err(SendInputError::PartialDelivery {
+                sent: delivered.len(),
+                expected: events.len(),
+            });
+        }
+        delivered.push(event.key);
+    }
+    Ok(events.len())
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum SendInputError {
+    #[error("a shortcut must contain at least one key")]
+    EmptyChord,
+    #[error("a shortcut may contain at most {MAX_CHORD_KEYS} keys, got {0}")]
+    ChordTooLong(usize),
+    #[error("a shortcut contains duplicate key {0:?}")]
+    DuplicateKey(KeyCode),
+    #[error("SendInput delivered only {sent}/{expected} events; release rollback was attempted")]
+    PartialDelivery { sent: usize, expected: usize },
+    #[error("SendInput backend failed with unknown delivery state: {0}")]
+    Backend(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendInputSnapshot {
+    pub available: bool,
+    pub submitted_batches: u64,
+    pub submitted_events: u64,
+    pub last_error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mouse_amounts_validate_and_actions_round_trip() {
+        for amount in [1, 5, 100] {
+            assert_eq!(
+                send_wheel_with(ScrollDirection::Down, amount, |delta| {
+                    assert_eq!(delta, -120 * i32::from(amount));
+                    Ok(1)
+                }),
+                Ok(1)
+            );
+        }
+        for amount in [0, 101, u16::MAX] {
+            assert!(send_wheel_with(ScrollDirection::Up, amount, |_| {
+                panic!("invalid amount must not inject")
+            })
+            .is_err());
+        }
+        for action in [
+            ButtonAction::MouseClick {
+                kind: MouseClickKind::DoubleLeft,
+            },
+            ButtonAction::MouseMove {
+                direction: MoveDirection::Left,
+                distance: 75,
+            },
+            ButtonAction::Scroll {
+                direction: ScrollDirection::Down,
+                steps: 5,
+            },
+        ] {
+            let json = serde_json::to_string(&action).unwrap();
+            assert_eq!(serde_json::from_str::<ButtonAction>(&json).unwrap(), action);
+        }
+    }
+
+    #[test]
+    fn mapping_normalization_rejects_invalid_mouse_amounts() {
+        for action in [
+            ButtonAction::MouseMove {
+                direction: MoveDirection::Up,
+                distance: 0,
+            },
+            ButtonAction::MouseMove {
+                direction: MoveDirection::Left,
+                distance: 2001,
+            },
+            ButtonAction::Scroll {
+                direction: ScrollDirection::Down,
+                steps: 101,
+            },
+        ] {
+            let mut mappings = ButtonMappings::default();
+            mappings.actions.insert(
+                RemoteButton::Power,
+                ButtonActions {
+                    single: action,
+                    ..Default::default()
+                },
+            );
+            assert!(mappings.normalized().is_err());
+        }
+    }
+
+    #[test]
+    fn move_directions_are_signed_physical_pixel_offsets() {
+        for (direction, expected) in [
+            (MoveDirection::Up, (0, -30)),
+            (MoveDirection::Down, (0, 30)),
+            (MoveDirection::Left, (-30, 0)),
+            (MoveDirection::Right, (30, 0)),
+        ] {
+            assert_eq!(direction.offset(30), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn mouse_clicks_pair_edges_and_release_partial_down() {
+        for kind in [
+            MouseClickKind::Left,
+            MouseClickKind::Right,
+            MouseClickKind::Middle,
+            MouseClickKind::DoubleLeft,
+        ] {
+            assert_eq!(
+                send_click_with(kind, |edges| {
+                    assert_eq!(edges, &[false, true, false, true][..kind.event_count()]);
+                    Ok(edges.len())
+                }),
+                Ok(kind.event_count())
+            );
+        }
+        let mut calls = Vec::new();
+        let result = send_click_with(MouseClickKind::DoubleLeft, |edges| {
+            calls.push(edges.to_vec());
+            Ok(if calls.len() == 1 { 1 } else { 1 })
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, [vec![false, true, false, true], vec![true]]);
+    }
+
+    #[test]
+    fn application_library_round_trips_without_adding_button_bindings() {
+        let mut mappings = ButtonMappings::default();
+        let app = crate::app_launcher::CustomAppPick {
+            name: "Example".into(),
+            path: "shell:AppsFolder\\Example!App".into(),
+        };
+        mappings.applications = vec![app.clone(), app];
+        let normalized = mappings.normalized().unwrap();
+        assert_eq!(normalized.applications.len(), 1);
+        assert!(normalized.actions.is_empty());
+        let bytes = serde_json::to_vec(&normalized).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<ButtonMappings>(&bytes).unwrap(),
+            normalized
+        );
+        let old: ButtonMappings = serde_json::from_str(r#"{"enabled":true,"actions":{}}"#).unwrap();
+        assert!(old.applications.is_empty());
+        assert!(!serde_json::to_string(&old)
+            .unwrap()
+            .contains("applications"));
+    }
+
+    fn chord(keys: &[KeyCode]) -> KeyChord {
+        KeyChord {
+            keys: keys.to_vec(),
+        }
+    }
+
+    #[test]
+    fn recognizes_only_the_windows_l_system_action() {
+        assert!(chord(&[KeyCode::LeftWindows, KeyCode::L]).is_lock_workstation());
+        assert!(chord(&[KeyCode::L, KeyCode::RightWindows]).is_lock_workstation());
+        assert!(!chord(&[KeyCode::LeftWindows, KeyCode::D]).is_lock_workstation());
+        assert!(!chord(&[KeyCode::LeftWindows, KeyCode::Shift, KeyCode::L]).is_lock_workstation());
+    }
+
+    #[test]
+    fn native_key_covers_common_keys_and_none_for_vendor_and_tv() {
+        // 泄漏对冲依据：常见键的原生动作可由同键映射覆盖（泄漏路径免注入）。
+        assert_eq!(native_key(RemoteButton::Ok), Some(KeyCode::Enter));
+        assert_eq!(native_key(RemoteButton::Home), Some(KeyCode::Home));
+        assert_eq!(native_key(RemoteButton::Up), Some(KeyCode::Up));
+        assert_eq!(native_key(RemoteButton::Down), Some(KeyCode::Down));
+        assert_eq!(native_key(RemoteButton::Left), Some(KeyCode::Left));
+        assert_eq!(native_key(RemoteButton::Right), Some(KeyCode::Right));
+        assert_eq!(native_key(RemoteButton::Menu), Some(KeyCode::Apps));
+        // 厂商键（Windows 无默认动作）与 TV（OEM_3 `~/~ 无对应 KeyCode）：
+        // 原生无法覆盖，泄漏路径只能注入（结构性双响应残留，Helper 轨解决）。
+        assert_eq!(native_key(RemoteButton::Back), None);
+        assert_eq!(native_key(RemoteButton::Power), None);
+        assert_eq!(native_key(RemoteButton::Tv), None);
+    }
+
+    #[test]
+    fn tap_is_one_down_batch_followed_by_reverse_key_up_order() {
+        let events = plan_key_tap(&chord(&[KeyCode::LeftWindows, KeyCode::D])).unwrap();
+        assert_eq!(
+            events,
+            vec![
+                PlannedKeyEvent {
+                    key: KeyCode::LeftWindows,
+                    is_key_up: false,
+                },
+                PlannedKeyEvent {
+                    key: KeyCode::D,
+                    is_key_up: false,
+                },
+                PlannedKeyEvent {
+                    key: KeyCode::D,
+                    is_key_up: true,
+                },
+                PlannedKeyEvent {
+                    key: KeyCode::LeftWindows,
+                    is_key_up: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_long_and_duplicate_chords() {
+        assert_eq!(chord(&[]).validated(), Err(SendInputError::EmptyChord));
+        assert!(matches!(
+            chord(&[KeyCode::A, KeyCode::B, KeyCode::C, KeyCode::D, KeyCode::E,]).validated(),
+            Err(SendInputError::ChordTooLong(5))
+        ));
+        assert_eq!(
+            chord(&[KeyCode::A, KeyCode::A]).validated(),
+            Err(SendInputError::DuplicateKey(KeyCode::A))
+        );
+    }
+
+    #[test]
+    fn partial_down_delivery_releases_only_keys_that_landed() {
+        let mut calls = Vec::new();
+        let result = send_key_tap_with(&chord(&[KeyCode::LeftWindows, KeyCode::D]), |events| {
+            calls.push(events.to_vec());
+            Ok(if calls.len() == 1 { 1 } else { events.len() })
+        });
+        assert!(matches!(
+            result,
+            Err(SendInputError::PartialDelivery { .. })
+        ));
+        assert_eq!(
+            calls[1],
+            vec![PlannedKeyEvent {
+                key: KeyCode::LeftWindows,
+                is_key_up: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn partial_up_delivery_finishes_remaining_releases() {
+        let mut calls = Vec::new();
+        let result = send_key_tap_with(&chord(&[KeyCode::LeftWindows, KeyCode::D]), |events| {
+            calls.push(events.to_vec());
+            Ok(if calls.len() == 1 { 3 } else { events.len() })
+        });
+        assert!(matches!(
+            result,
+            Err(SendInputError::PartialDelivery { .. })
+        ));
+        assert_eq!(
+            calls[1],
+            vec![PlannedKeyEvent {
+                key: KeyCode::LeftWindows,
+                is_key_up: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn unknown_backend_failure_releases_every_possible_key_individually() {
+        let mut calls = Vec::new();
+        let result = send_key_tap_with(&chord(&[KeyCode::LeftWindows, KeyCode::D]), |events| {
+            calls.push(events.to_vec());
+            if calls.len() == 1 {
+                Err("driver failure".to_owned())
+            } else {
+                Ok(events.len())
+            }
+        });
+        assert_eq!(
+            result,
+            Err(SendInputError::Backend("driver failure".to_owned()))
+        );
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[1][0].key, KeyCode::D);
+        assert_eq!(calls[2][0].key, KeyCode::LeftWindows);
+    }
+
+    #[test]
+    fn spaced_edge_submission_sends_one_event_per_call_and_rolls_back_on_failure() {
+        let down = [
+            PlannedKeyEvent {
+                key: KeyCode::LeftControl,
+                is_key_up: false,
+            },
+            PlannedKeyEvent {
+                key: KeyCode::LeftWindows,
+                is_key_up: false,
+            },
+        ];
+
+        // Happy path: one SendInput call per event, no batch merging.
+        let mut calls = Vec::new();
+        let sent = send_key_edges_spaced_with(&down, Duration::ZERO, |events| {
+            calls.push(events.to_vec());
+            Ok(events.len())
+        })
+        .unwrap();
+        assert_eq!(sent, 2);
+        assert_eq!(calls, vec![vec![down[0].clone()], vec![down[1].clone()]]);
+
+        // Backend failure on the second event rolls back the first key.
+        let mut calls = Vec::new();
+        let result = send_key_edges_spaced_with(&down, Duration::ZERO, |events| {
+            calls.push(events.to_vec());
+            if calls.len() == 1 {
+                Ok(1)
+            } else {
+                Err("stuck".to_owned())
+            }
+        });
+        assert_eq!(result, Err(SendInputError::Backend("stuck".to_owned())));
+        assert_eq!(
+            calls,
+            vec![
+                vec![down[0].clone()],
+                vec![down[1].clone()],
+                vec![PlannedKeyEvent {
+                    key: KeyCode::LeftControl,
+                    is_key_up: true,
+                }],
+            ]
+        );
+
+        // Zero delivery on the second event reports partial delivery and rolls back.
+        let mut calls = Vec::new();
+        let result = send_key_edges_spaced_with(&down, Duration::ZERO, |events| {
+            calls.push(events.to_vec());
+            Ok(if calls.len() == 1 { 1 } else { 0 })
+        });
+        assert_eq!(
+            result,
+            Err(SendInputError::PartialDelivery {
+                sent: 1,
+                expected: 2
+            })
+        );
+        assert_eq!(
+            calls,
+            vec![
+                vec![down[0].clone()],
+                vec![down[1].clone()],
+                vec![PlannedKeyEvent {
+                    key: KeyCode::LeftControl,
+                    is_key_up: true,
+                }],
+            ]
+        );
+
+        assert_eq!(
+            send_key_edges_spaced_with(&[], Duration::ZERO, |_| Ok(0)),
+            Err(SendInputError::EmptyChord)
+        );
+    }
+
+    #[test]
+    fn right_alt_uses_extended_alt_scan_code_and_virtual_key() {
+        assert_eq!(KeyCode::RightAlt.virtual_key(), 0xA5);
+        assert_eq!(KeyCode::RightAlt.physical_scan_code(), Some((0x38, true)));
+        assert!(KeyCode::RightAlt.is_extended());
+    }
+
+    #[test]
+    fn physical_modifier_identity_is_explicit() {
+        assert_eq!(
+            KeyCode::LeftControl.physical_scan_code(),
+            Some((0x1D, false))
+        );
+        assert_eq!(
+            KeyCode::RightControl.physical_scan_code(),
+            Some((0x1D, true))
+        );
+        assert_eq!(
+            KeyCode::RightShift.physical_scan_code(),
+            Some((0x36, false))
+        );
+    }
+
+    #[test]
+    fn missing_button_mapping_is_disabled_and_invalid_chords_fail_closed() {
+        let mappings = ButtonMappings::default();
+        assert_eq!(
+            mappings.action_for(RemoteButton::Up, ButtonTrigger::Single),
+            ButtonAction::Disabled
+        );
+        assert_eq!(mappings.mapped_mask(), 0);
+
+        let mut mappings = ButtonMappings::default();
+        mappings.actions.insert(
+            RemoteButton::Up,
+            ButtonActions {
+                single: ButtonAction::Shortcut { chord: chord(&[]) },
+                ..ButtonActions::default()
+            },
+        );
+        assert_eq!(mappings.normalized(), Err(SendInputError::EmptyChord));
+    }
+
+    #[test]
+    fn legacy_single_action_mappings_migrate_to_the_single_cell() {
+        // 旧版 button-mappings.json：actions 值是单动作对象。
+        let legacy = serde_json::json!({
+            "actions": {
+                "ok": { "type": "shortcut", "chord": { "keys": ["enter"] } },
+                "up": { "type": "disabled" }
+            }
+        });
+        let mappings: ButtonMappings = serde_json::from_value(legacy).unwrap();
+        assert!(mappings.enabled, "缺省 enabled 必须默认开启");
+        assert_eq!(
+            mappings.actions(RemoteButton::Ok).single,
+            ButtonAction::Shortcut {
+                chord: KeyChord {
+                    keys: vec![KeyCode::Enter]
+                }
+            }
+        );
+        assert_eq!(
+            mappings.action_for(RemoteButton::Ok, ButtonTrigger::Double),
+            ButtonAction::Disabled
+        );
+        assert_eq!(
+            mappings.action_for(RemoteButton::Ok, ButtonTrigger::Long),
+            ButtonAction::Disabled
+        );
+        assert_eq!(
+            mappings.mapped_mask(),
+            1u64 << RemoteButton::Ok.ordinal(),
+            "迁移后的单击配置应计入吞键掩码"
+        );
+    }
+
+    #[test]
+    fn mapped_mask_requires_enabled_and_any_configured_cell() {
+        let mut mappings = ButtonMappings::default();
+        mappings.actions.insert(
+            RemoteButton::Back,
+            ButtonActions {
+                long: ButtonAction::Shortcut {
+                    chord: chord(&[KeyCode::Escape]),
+                },
+                ..ButtonActions::default()
+            },
+        );
+        let expected_bit = 1u64 << RemoteButton::Back.ordinal();
+        assert_eq!(mappings.mapped_mask(), expected_bit);
+
+        let disabled = ButtonMappings {
+            enabled: false,
+            actions: mappings.actions.clone(),
+            applications: Vec::new(),
+        };
+        assert_eq!(disabled.mapped_mask(), 0, "总开关关闭时不吞任何键");
+    }
+
+    #[test]
+    fn three_cell_mappings_round_trip_through_json() {
+        let mut mappings = ButtonMappings::default();
+        mappings.actions.insert(
+            RemoteButton::Tv,
+            ButtonActions {
+                single: ButtonAction::Shortcut {
+                    chord: chord(&[KeyCode::LeftWindows, KeyCode::D]),
+                },
+                double: ButtonAction::Disabled,
+                long: ButtonAction::Shortcut {
+                    chord: chord(&[KeyCode::Control, KeyCode::C]),
+                },
+            },
+        );
+        let encoded = serde_json::to_string(&mappings).unwrap();
+        let decoded: ButtonMappings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, mappings);
+    }
+
+    #[test]
+    fn normalized_strips_unsupported_button_customization() {
+        // 策略性不支持的按键：normalized() 在持久化层剥离返回/音量±配置；
+        // 左键自 2026-09-08 起与其余方向键同样允许映射，不得再被剥离。
+        let mut mappings = ButtonMappings::default();
+        let single_escape = ButtonActions {
+            single: ButtonAction::Shortcut {
+                chord: chord(&[KeyCode::Escape]),
+            },
+            ..ButtonActions::default()
+        };
+        mappings
+            .actions
+            .insert(RemoteButton::Left, single_escape.clone());
+        for button in [
+            RemoteButton::Back,
+            RemoteButton::VolumeUp,
+            RemoteButton::VolumeDown,
+        ] {
+            mappings.actions.insert(button, single_escape.clone());
+        }
+        mappings.actions.insert(
+            RemoteButton::Tv,
+            ButtonActions {
+                single: ButtonAction::Shortcut {
+                    chord: chord(&[KeyCode::LeftWindows, KeyCode::D]),
+                },
+                ..ButtonActions::default()
+            },
+        );
+        let normalized = mappings.normalized().unwrap();
+        assert!(
+            normalized.actions.contains_key(&RemoteButton::Left),
+            "左键映射必须保留"
+        );
+        for button in [
+            RemoteButton::Back,
+            RemoteButton::VolumeUp,
+            RemoteButton::VolumeDown,
+        ] {
+            assert!(
+                !normalized.actions.contains_key(&button),
+                "{button:?} 自定义必须被策略剥离"
+            );
+        }
+        assert!(normalized.actions.contains_key(&RemoteButton::Tv));
+        assert_eq!(
+            normalized.mapped_mask(),
+            (1u64 << RemoteButton::Left.ordinal()) | (1u64 << RemoteButton::Tv.ordinal())
+        );
+    }
+}

@@ -1,0 +1,521 @@
+//! 按住说话语音键抑制器。
+//!
+//! 背景（2026-09-04 调查实锤，Testing\investigation\remote-capture.log 取证）：
+//! 遥控器语音键在 HID 键盘层是 F5（VK 0x74），按住期间 F5 处于按下状态；此时
+//! 注入 左Ctrl+左Win 会被微信输入法判定为三键同按（无效和弦）而不触发语音。
+//! 参考实现（ZSTDJan / Voice_VibeCoding）均以低级键盘钩子吞掉遥控器原始 F5
+//! 解决此问题（VVC 的"F5 状态机"）。
+//!
+//! 结构（2026-09-10 加固后，单一 Raw Input 注册 + 钩子链头 bump）：
+//! - **钩子线程**：常驻 WH_KEYBOARD_LL 钩子（专职消息泵）。吞键判定只针对
+//!   F5，其余按键一律透传；武装条件（其一）：ATVV 语音会话进行中
+//!   （`set_session_active`，BLE 工作线程调用）、BLE 正处于连接建立/重连
+//!   窗口，或主 Raw Input 监听器在武装宽限（250ms）内观察到来自遥控器的 F5；首个
+//!   F5 在回调内有界等待 60ms 等任一武装信号（物理 F5 最坏 +60ms 延迟，
+//!   ZSTDJan 同款取舍）。
+//! - **Raw Input 归因**：由 `raw_input_windows.rs` 的进程唯一注册窗口转发。
+//!   Windows 明确规定同一进程每种 Raw Input 设备类只有最后注册的窗口能接收；
+//!   旧版在这里另建窗口会被主监听器覆盖，造成重连期间 F5 全部泄漏。
+//! - **钩子链头 bump**（VVC 技巧：先挂新钩再卸旧钩，无吞键空窗）：LL 钩子
+//!   按"最新安装在最前"的顺序调用；若微信输入法等目标在本应用之后（重）
+//!   安装了自己的 LL 钩子，其和弦判定会先于本抑制器看到遥控器 F5，导致
+//!   和弦被"额外按键"拒绝。每次语音会话开始（`set_session_active(true)`）
+//!   与每 10 秒定时器都把本钩子重新安装到链头，保证 F5 在到达任何目标钩子
+//!   之前先被吞掉。
+//! - **防粘键配对**（2026-09-05 补，VVC"F5 状态机"同款规则：DOWN 漏进 OS
+//!   则 UP 必放行）：按下沿 60ms 有界等待超时即泄漏进 OS（归因线程偶发
+//!   迟到、应用中途启动等）；若释放沿仍按会话/武装规则吞掉，OS 键态将
+//!   永久卡在按下——粘住的 F5 会让后续所有和弦带"额外按键"被微信输入法
+//!   拒绝（2026-09-05 真机"完全不可用"故障的根因）。故 UP 沿只看配对
+//!   状态：本次按住的所有 DOWN 沿都被本钩子吞下（HOLD_SWALLOWED_ALL）
+//!   才吞对应 UP 沿；任一 DOWN 沿泄漏（HOLD_LEAKED，含 typematic 重复沿）
+//!   或配对未知（钩子中途启动，HOLD_NONE）一律放行 UP，宁可向 OS 多送
+//!   一个孤立 UP（无害）也不留粘键。
+//! - 会话结束保留 250ms 宽限，覆盖 BLE 通知晚到的物理 F5 释放沿。
+//!
+//! 护栏：回调内只读原子状态 + 短睡眠轮询，无 IO/锁；线程退出时卸钩。
+
+#[cfg(windows)]
+mod windows_impl {
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+    use std::sync::mpsc;
+    use std::sync::OnceLock;
+    use std::thread::JoinHandle;
+    use std::time::Instant;
+    use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetTimer,
+        SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG,
+        WH_KEYBOARD_LL, WM_APP, WM_QUIT, WM_TIMER,
+    };
+
+    const ARM_GRACE_MS: u64 = 250;
+    const BOUNDED_WAIT_MS: u64 = 60;
+    const VK_F5: u32 = 0x74;
+    /// 链头 bump 的线程消息（WM_APP 私有区）。
+    const WM_HOOK_BUMP: u32 = WM_APP + 0x50;
+    const BUMP_TIMER_ID: usize = 0x5A11;
+    const BUMP_TIMER_MS: u32 = 10_000;
+
+    static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+    /// 连接建立/重连阶段临时接管 F5。此时遥控器的原生 F5 可能先于 ATVV
+    /// 控制通知到达；若放行会触发记事本“插入时间/日期”等前台副作用。
+    static LINK_GUARD_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static ARMED_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+    static SWALLOW_MASTER: AtomicBool = AtomicBool::new(false);
+    /// 抑制器决策计数（AGENTS.md 功能点日志规范；仅钩子线程原子递增，
+    /// 会话开始时由工作线程快照落盘——钩子线程绝不做文件 IO）。
+    static F5_DOWN_SEEN: AtomicU64 = AtomicU64::new(0);
+    static F5_DOWN_SWALLOWED: AtomicU64 = AtomicU64::new(0);
+    static F5_DOWN_LEAKED: AtomicU64 = AtomicU64::new(0);
+    static F5_DOWN_WAITED_ARMED_LATE: AtomicU64 = AtomicU64::new(0);
+    static REMOTE_F5_RAW_OBSERVED: AtomicU64 = AtomicU64::new(0);
+    /// 遥控器 HID 活动通知（lib.rs 接线到 BleRuntime::wake_reconnect）：
+    /// 归因线程观察到遥控器键盘事件时回调。用于断连状态下遥控器醒来
+    /// 按键时立即触发重连（HID 先于 GATT 可达，2026-09-05 实证）。
+    static REMOTE_HID_ACTIVITY_NOTIFY: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+    /// 防粘键配对状态（仅钩子线程读写）：0=无按住/配对未知，1=本次按住的
+    /// DOWN 沿全部被本钩子吞下，2=任一 DOWN 沿已泄漏进 OS。UP 沿只在 1 时
+    /// 吞下（VVC 同款：DOWN 漏进 OS 则 UP 必放行）。
+    static HOLD_PAIRING: AtomicU32 = AtomicU32::new(0);
+    pub const HOLD_NONE: u32 = 0;
+    pub const HOLD_SWALLOWED_ALL: u32 = 1;
+    pub const HOLD_LEAKED: u32 = 2;
+    static CLOCK_BASE: OnceLock<Instant> = OnceLock::new();
+    static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+
+    fn now_ms() -> u64 {
+        CLOCK_BASE.get_or_init(Instant::now).elapsed().as_millis() as u64
+    }
+
+    fn armed() -> bool {
+        let until = ARMED_UNTIL_MS.load(Ordering::Relaxed);
+        until != 0 && now_ms() < until
+    }
+
+    fn session_active() -> bool {
+        SESSION_ACTIVE.load(Ordering::Relaxed)
+    }
+
+    fn swallow_ready() -> bool {
+        decide(
+            VK_F5,
+            false,
+            session_active(),
+            LINK_GUARD_ACTIVE.load(Ordering::Relaxed),
+            armed(),
+            HOLD_NONE,
+        )
+    }
+
+    /// 纯决策函数：给定状态与按键，是否吞键（单元测试覆盖）。
+    /// UP 沿只按配对状态裁决（会话/武装不参与）：本次按住的 DOWN 沿全部被
+    /// 吞下（hold==HOLD_SWALLOWED_ALL）才吞 UP，防"DOWN 泄漏 + UP 吞下"粘键；
+    /// 配对未知（钩子中途启动）与已泄漏一律放行 UP（宁可送孤立 UP，不留粘键）。
+    pub fn decide(
+        vk_code: u32,
+        is_key_up: bool,
+        session: bool,
+        link_guard: bool,
+        armed_now: bool,
+        hold_pairing: u32,
+    ) -> bool {
+        if vk_code != VK_F5 {
+            return false;
+        }
+        if is_key_up {
+            return hold_pairing == HOLD_SWALLOWED_ALL;
+        }
+        session || link_guard || armed_now
+    }
+
+    /// 纯状态转移：DOWN 沿裁决后更新配对状态。任一 DOWN 沿泄漏（含 typematic
+    /// 重复沿）即污染为 HOLD_LEAKED——只有全吞的按住才允许吞其 UP 沿。
+    pub fn track_down(hold_pairing: u32, down_swallowed: bool) -> u32 {
+        if hold_pairing == HOLD_LEAKED {
+            return HOLD_LEAKED;
+        }
+        if down_swallowed {
+            HOLD_SWALLOWED_ALL
+        } else {
+            HOLD_LEAKED
+        }
+    }
+
+    unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0 && SWALLOW_MASTER.load(Ordering::Relaxed) {
+            // WM_KEYDOWN=0x0100 / WM_SYSKEYDOWN=0x0104 / WM_KEYUP=0x0101 / WM_SYSKEYUP=0x0105
+            let message = wparam.0 as u32;
+            if matches!(message, 0x0100 | 0x0104 | 0x0101 | 0x0105) {
+                let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+                if kb.vkCode == VK_F5 {
+                    let is_key_up = matches!(message, 0x0101 | 0x0105);
+                    if is_key_up {
+                        let hold = HOLD_PAIRING.swap(HOLD_NONE, Ordering::Relaxed);
+                        if decide(
+                            VK_F5,
+                            true,
+                            session_active(),
+                            LINK_GUARD_ACTIVE.load(Ordering::Relaxed),
+                            armed(),
+                            hold,
+                        ) {
+                            return LRESULT(1);
+                        }
+                        // DOWN 沿曾泄漏进 OS（或配对未知）：放行 UP，防止粘键。
+                        return CallNextHookEx(None, code, wparam, lparam);
+                    }
+                    // DOWN 沿：先试武装状态，未武装则 60ms 有界等待。
+                    let waited = !swallow_ready();
+                    let swallowed = if !waited {
+                        true
+                    } else {
+                        let deadline = now_ms() + BOUNDED_WAIT_MS;
+                        let mut armed_late = false;
+                        while now_ms() < deadline {
+                            if swallow_ready() {
+                                armed_late = true;
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                        armed_late
+                    };
+                    if waited && swallowed {
+                        F5_DOWN_WAITED_ARMED_LATE.fetch_add(1, Ordering::Relaxed);
+                    }
+                    F5_DOWN_SEEN.fetch_add(1, Ordering::Relaxed);
+                    if swallowed {
+                        F5_DOWN_SWALLOWED.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        F5_DOWN_LEAKED.fetch_add(1, Ordering::Relaxed);
+                    }
+                    let hold = HOLD_PAIRING.load(Ordering::Relaxed);
+                    let next = track_down(hold, swallowed);
+                    HOLD_PAIRING.store(next, Ordering::Relaxed);
+                    if swallowed {
+                        return LRESULT(1);
+                    }
+                    // 有界等待超时：DOWN 泄漏进 OS（配对状态已标记 LEAKED，
+                    // 其 UP 沿届时放行，避免粘键）。
+                    return CallNextHookEx(None, code, wparam, lparam);
+                }
+            }
+        }
+        CallNextHookEx(None, code, wparam, lparam)
+    }
+
+    /// 钩子链头 bump：先挂新钩（立即成为链头），再卸旧钩——重叠安装无吞键空窗
+    /// （Voice_VibeCoding 同款技巧）。新钩安装失败时保留旧钩。
+    fn bump_to_chain_head(current: &mut Option<HHOOK>) {
+        if let Ok(new_hook) = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) }
+        {
+            let old = current.replace(new_hook);
+            if let Some(old) = old {
+                unsafe {
+                    let _ = UnhookWindowsHookEx(old);
+                }
+            }
+        }
+    }
+
+    /// 注册遥控器 HID 活动回调（lib.rs 启动时接线；重复注册保持首个）。
+    pub fn set_remote_hid_activity_notify(callback: Box<dyn Fn() + Send + Sync>) {
+        let _ = REMOTE_HID_ACTIVITY_NOTIFY.set(callback);
+    }
+
+    // ---- 钩子线程（LL 钩子 + 消息泵 + bump 消息/定时器） ----
+
+    fn hook_thread(thread_id_tx: mpsc::Sender<u32>) {
+        unsafe {
+            let instance: HINSTANCE = match GetModuleHandleW(None) {
+                Ok(module) => module.into(),
+                Err(_) => return,
+            };
+            let _ = thread_id_tx.send(GetCurrentThreadId());
+            let _ = CLOCK_BASE.get_or_init(Instant::now);
+
+            let mut current: Option<HHOOK> = None;
+            bump_to_chain_head(&mut current);
+            if current.is_none() {
+                return;
+            }
+            HOOK_THREAD_ID.store(GetCurrentThreadId(), Ordering::Relaxed);
+            SetTimer(None, BUMP_TIMER_ID, BUMP_TIMER_MS, None);
+            SWALLOW_MASTER.store(true, Ordering::Relaxed);
+
+            let mut message = MSG::default();
+            while GetMessageW(&mut message, None, 0, 0).as_bool() {
+                match message.message {
+                    WM_QUIT => break,
+                    WM_HOOK_BUMP => bump_to_chain_head(&mut current),
+                    WM_TIMER if message.wParam.0 as usize == BUMP_TIMER_ID => {
+                        bump_to_chain_head(&mut current)
+                    }
+                    _ => {}
+                }
+                let _ = TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+
+            SWALLOW_MASTER.store(false, Ordering::Relaxed);
+            HOOK_THREAD_ID.store(0, Ordering::Relaxed);
+            if let Some(hook) = current.take() {
+                let _ = UnhookWindowsHookEx(hook);
+            }
+            let _ = instance;
+        }
+    }
+
+    /// 语音键抑制器句柄：持有即运行，丢弃即停止。会话武装走模块级
+    /// [`set_session_active`]（BLE 工作线程直接调用，无需传递句柄）。
+    #[derive(Debug)]
+    pub struct VoiceKeySuppressor {
+        worker: Option<JoinHandle<()>>,
+        thread_id: u32,
+    }
+
+    impl VoiceKeySuppressor {
+        /// 启动抑制线程（钩子 + 消息泵；Raw Input 归因由主监听器转发）。
+        pub fn start() -> VoiceKeySuppressor {
+            SESSION_ACTIVE.store(false, Ordering::Relaxed);
+            LINK_GUARD_ACTIVE.store(false, Ordering::Relaxed);
+            ARMED_UNTIL_MS.store(0, Ordering::Relaxed);
+            HOLD_PAIRING.store(HOLD_NONE, Ordering::Relaxed);
+            let (thread_id_tx, thread_id_rx) = mpsc::channel();
+            let worker = std::thread::Builder::new()
+                .name("micontrol-voice-key-suppressor".to_owned())
+                .spawn(move || hook_thread(thread_id_tx))
+                .ok();
+            let thread_id = thread_id_rx.recv().unwrap_or(0);
+            VoiceKeySuppressor { worker, thread_id }
+        }
+
+        /// ATVV 语音会话起止（等价模块级 [`set_session_active`]）。
+        pub fn set_session_active(&self, active: bool) {
+            set_session_active(active);
+        }
+    }
+
+    /// GATT 控制通知到达时立即武装宽限（供 BLE 回调线程调用）。
+    ///
+    /// 背景（2026-09-05 21:08 实证，kb-live/live13 交叉）：遥控器闲置后
+    /// 首按，应用自身被后台节流——0x04 经工作线程队列到
+    /// set_session_active 的链路可拖到 ~120ms，而 F5 的 60ms 有界等待
+    /// 提前超时 → F5 D 泄漏进 OS → 和弦变成 F5+Ctrl+Win 三键被微信输入法
+    /// 拒绝（首按失败）。GATT 回调线程因刚被事件唤醒不受队列延迟，在
+    /// 此直接武装，F5 D（正常比 0x04 晚 60-90ms 到达）落在 250ms 宽限内
+    /// 被即时吞下。
+    pub fn arm_grace() {
+        ARMED_UNTIL_MS.store(now_ms() + ARM_GRACE_MS, Ordering::Relaxed);
+    }
+
+    /// 进程唯一 Raw Input 监听器确认语音 F5 来自小米遥控器后调用：刷新
+    /// 抑制宽限，并唤醒 BLE 退避重连。只转发语音 F5，避免方向键长按的
+    /// typematic 重复沿灌满重连消息队列。
+    pub fn observe_remote_voice_f5(wake_reconnect: bool) {
+        REMOTE_F5_RAW_OBSERVED.fetch_add(1, Ordering::Relaxed);
+        arm_grace();
+        if wake_reconnect {
+            crate::ble::gatt_note(
+                "voice_f5_raw edge=down wake_reconnect=true grace_refreshed=true".to_owned(),
+            );
+            if let Some(notify) = REMOTE_HID_ACTIVITY_NOTIFY.get() {
+                notify();
+            }
+        }
+    }
+
+    /// BLE 连接建立/重连窗口临时保护遥控器原生 F5。就绪、失败、挂起或
+    /// 用户主动断开时关闭，避免长期占用实体键盘 F5。
+    pub fn set_link_guard_active(active: bool) {
+        let previous = LINK_GUARD_ACTIVE.swap(active, Ordering::Relaxed);
+        if previous && !active {
+            ARMED_UNTIL_MS.store(now_ms() + ARM_GRACE_MS, Ordering::Relaxed);
+        }
+        if previous != active {
+            crate::ble::gatt_note(format!(
+                "voice_f5_guard active={active} reason=ble_link_transition"
+            ));
+        }
+    }
+
+    /// ATVV 语音会话起止（模块级，供 BleRuntime 工作线程调用）：
+    /// 会话期间吞 F5；结束时保留 250ms 宽限覆盖晚到的释放沿。
+    /// 会话开始同时请求钩子链头 bump——微信输入法等目标若在本应用之后
+    /// 安装了自己的 LL 钩子，bump 保证本抑制器先于目标看到遥控器 F5。
+    pub fn set_session_active(active: bool) {
+        if active {
+            SESSION_ACTIVE.store(true, Ordering::Relaxed);
+            // 功能点日志：抑制器决策计数快照（自应用启动累计），首按
+            // 失败类报障一次日志拉取即可归因（泄漏/等待超时/即时吞下）。
+            crate::ble::gatt_note(format!(
+                "suppressor_stats seen={} swallowed={} leaked={} waited_late={} raw_remote_f5={} link_guard={}",
+                F5_DOWN_SEEN.load(Ordering::Relaxed),
+                F5_DOWN_SWALLOWED.load(Ordering::Relaxed),
+                F5_DOWN_LEAKED.load(Ordering::Relaxed),
+                F5_DOWN_WAITED_ARMED_LATE.load(Ordering::Relaxed),
+                REMOTE_F5_RAW_OBSERVED.load(Ordering::Relaxed),
+                LINK_GUARD_ACTIVE.load(Ordering::Relaxed),
+            ));
+            let thread_id = HOOK_THREAD_ID.load(Ordering::Relaxed);
+            if thread_id != 0 {
+                unsafe {
+                    let _ = PostThreadMessageW(thread_id, WM_HOOK_BUMP, WPARAM(0), LPARAM(0));
+                }
+            }
+        } else {
+            SESSION_ACTIVE.store(false, Ordering::Relaxed);
+            ARMED_UNTIL_MS.store(now_ms() + ARM_GRACE_MS, Ordering::Relaxed);
+        }
+    }
+
+    impl Drop for VoiceKeySuppressor {
+        fn drop(&mut self) {
+            SWALLOW_MASTER.store(false, Ordering::Relaxed);
+            SESSION_ACTIVE.store(false, Ordering::Relaxed);
+            HOLD_PAIRING.store(HOLD_NONE, Ordering::Relaxed);
+            HOOK_THREAD_ID.store(0, Ordering::Relaxed);
+            if self.thread_id != 0 {
+                unsafe {
+                    let _ = PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+                }
+            }
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+pub use windows_impl::{
+    arm_grace, observe_remote_voice_f5, set_link_guard_active, set_remote_hid_activity_notify,
+    set_session_active, VoiceKeySuppressor,
+};
+
+#[cfg(all(windows, test))]
+pub use windows_impl::{decide, track_down, HOLD_LEAKED, HOLD_NONE, HOLD_SWALLOWED_ALL};
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_armed_session_or_link_guard_f5_down_is_swallowed() {
+        // DOWN 沿：非 F5 一律透传；F5 仅在会话、建链保护或设备归因武装时吞。
+        assert!(!super::decide(
+            0x41,
+            false,
+            false,
+            false,
+            false,
+            super::HOLD_NONE
+        ));
+        assert!(!super::decide(
+            0x41,
+            true,
+            true,
+            true,
+            true,
+            super::HOLD_SWALLOWED_ALL
+        ));
+        assert!(!super::decide(
+            0x74,
+            false,
+            false,
+            false,
+            false,
+            super::HOLD_NONE
+        ));
+        assert!(super::decide(
+            0x74,
+            false,
+            true,
+            false,
+            false,
+            super::HOLD_NONE
+        ));
+        assert!(super::decide(
+            0x74,
+            false,
+            false,
+            true,
+            false,
+            super::HOLD_NONE
+        ));
+        assert!(super::decide(
+            0x74,
+            false,
+            false,
+            false,
+            true,
+            super::HOLD_NONE
+        ));
+    }
+
+    #[test]
+    fn up_edge_follows_down_pairing_not_session_or_armed() {
+        // UP 沿只认配对（VVC 同款防粘键：DOWN 漏进 OS 则 UP 必放行）：
+        // 全吞的按住才吞对应 UP；已泄漏/配对未知一律放行，即使会话与武装
+        // 仍生效也不吞——DOWN 已进 OS，UP 跟进才能解除 OS 键态。
+        assert!(super::decide(
+            0x74,
+            true,
+            false,
+            false,
+            false,
+            super::HOLD_SWALLOWED_ALL
+        ));
+        assert!(!super::decide(
+            0x74,
+            true,
+            true,
+            true,
+            true,
+            super::HOLD_LEAKED
+        ));
+        assert!(!super::decide(
+            0x74,
+            true,
+            true,
+            true,
+            true,
+            super::HOLD_NONE
+        ));
+        assert!(!super::decide(
+            0x41,
+            true,
+            true,
+            true,
+            true,
+            super::HOLD_SWALLOWED_ALL
+        ));
+    }
+
+    #[test]
+    fn any_leaked_down_poisons_the_hold() {
+        // 首个 DOWN 吞下 → 全吞；任一沿（含 typematic 重复沿）泄漏 → 污染；
+        // 污染后即使后续重复沿被吞下也不洗白——只有全吞的按住才允许吞 UP。
+        assert_eq!(
+            super::track_down(super::HOLD_NONE, true),
+            super::HOLD_SWALLOWED_ALL
+        );
+        assert_eq!(
+            super::track_down(super::HOLD_SWALLOWED_ALL, true),
+            super::HOLD_SWALLOWED_ALL
+        );
+        assert_eq!(
+            super::track_down(super::HOLD_SWALLOWED_ALL, false),
+            super::HOLD_LEAKED
+        );
+        assert_eq!(
+            super::track_down(super::HOLD_LEAKED, true),
+            super::HOLD_LEAKED
+        );
+        assert_eq!(
+            super::track_down(super::HOLD_NONE, false),
+            super::HOLD_LEAKED
+        );
+    }
+}
