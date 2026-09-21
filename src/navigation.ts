@@ -5,7 +5,7 @@ export type NavIcon = "keyboard" | "settings";
 export interface NavigationItem {
   id: PageId;
   label: string;
-  /** 底部导航图标（keyboard 对齐 macOS SF "keyboard"；settings 为齿轮）。 */
+  /** 底部导航图标（keyboard 键盘轮廓；settings 齿轮）。 */
   icon: NavIcon;
 }
 
@@ -20,7 +20,7 @@ const LIVENESS_STORAGE_KEY = "micontrol.livenessHeartbeat";
  * 余量覆盖 WebView 后台节流与轮询单次失败。 */
 const LIVENESS_FRESH_MS = 5_000;
 
-/** WebView 渲染进程崩溃重载会把整个应用重置回默认页（Bugs/2026-09-12），
+/** WebView 渲染进程崩溃重载会把整个应用重置回默认页，
  * 当前页持久化让恢复后停在用户离开时的页面。存储不可用时静默放弃：
  * 回到默认页不比重载前更差。 */
 export function loadPersistedPage(): PageId | null {

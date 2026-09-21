@@ -15,10 +15,9 @@ const MAX_CHORD_KEYS: usize = 4;
 /// be separated in time, otherwise the voice session never starts. Per-event
 /// submission with a small gap triggers reliably; 20 ms was validated at 4/4
 /// (20/40/60 ms all 4/4, zero-gap batch 0/2; see
-/// docs/investigations/evidence/p and
-/// Testing\investigation\p-chord-gap-experiment.ps1, 2026-09-04). Keep this
+/// (2026-09-04 内部验证记录). Keep this
 /// gap small: it sits on the critical path of every voice-key press.
-/// 80 ms = 字段验证稳定值（PR #16 release 4918d61）；20ms（cef24d3 2026-09-05）
+/// 80 ms = 字段验证稳定值；20ms（2026-09-05）
 /// 在微信输入法钩子冷/节流状态下首按必失败——用户实证遥控器闲置后首按
 /// 失败、再按成功稳定复现（7 次发作取证 micontrol-diag.log 20:15-20:27）；
 /// 20ms 的"4/4 验证"全部为热状态连续测试，未覆盖冷态。回退恢复 80ms。

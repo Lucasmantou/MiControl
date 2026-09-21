@@ -7,7 +7,7 @@ const emit = defineEmits<{ select: [page: PageId] }>();
 
 /**
  * 底部导航图标：SVG path 组（24x24 视窗，描边风格）。
- * keyboard 对齐 macOS SF "keyboard"；settings 为齿轮（圆心 + 齿圈轮廓）。
+ * keyboard 键盘轮廓；settings 齿轮（圆心 + 齿圈轮廓）。
  */
 const ICON_PATHS: Record<NavIcon, { strokes: string[] }> = {
   keyboard: {

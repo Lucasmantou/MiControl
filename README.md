@@ -56,11 +56,10 @@ cargo test --workspace  # Rust 测试
 ## 目录结构
 
 ```
-src/                    Vue 3 前端界面
-src-tauri/              Tauri 2 应用壳（窗口、托盘、IPC、诊断日志）
-crates/micontrol-core/  平台无关核心：ATVV 会话、IMA-ADPCM 编解码、语音管线
+src/                      Vue 3 前端界面
+src-tauri/                Tauri 2 应用壳（窗口、托盘、IPC、诊断日志）
+crates/micontrol-core/    平台无关核心：ATVV 会话、IMA-ADPCM 编解码、语音管线
 crates/micontrol-windows/ Windows 平台层：BLE GATT、Raw Input、SendInput、WASAPI
-scripts/                构建 / 安装生命周期测试脚本
 ```
 
 ## 许可

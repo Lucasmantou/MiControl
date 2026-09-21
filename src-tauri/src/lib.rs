@@ -886,7 +886,7 @@ fn runtime_simulation_requested() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// 退出前收尾的宽限期（2026-09-16）。必须有界——超时是常态路径之一，
-/// 不是错误路径（AGENTS.md「偶发迟到要按必然事件设计」）。
+/// 不是错误路径（偶发迟到要按必然事件设计）。
 ///
 /// 必须明显小于安装器侧的总宽限：`installer-hooks.nsh` 先固定静默 1.5s，若进程
 /// 仍在再补 6.5s（`MICONTROL_GRACEFUL_EXIT_SETTLE_MS` + `MICONTROL_GRACEFUL_EXIT_TAIL_MS`），
@@ -950,7 +950,7 @@ fn shutdown_platform_for_exit(app: &tauri::AppHandle) {
 /// `TerminateProcess`**（`tauri-bundler/.../nsis/utils.nsh` 的
 /// `CheckIfAppIsRunning`：没有优雅退出请求、`Sleep 500` 后即继续；静默安装
 /// 连提示都没有）。于是"升级"这个动作会留下未正常关闭的 GATT 会话——正是
-/// AGENTS.md 记录的链路僵死诱因。安装器侧现在会先置位一个命名事件并等待应用
+/// 已知的链路僵死诱因。安装器侧现在会先置位一个命名事件并等待应用
 /// 自行退出（见 `windows/installer-hooks.nsh`），本线程即那个等待端。
 fn spawn_installer_graceful_exit_watcher(app: tauri::AppHandle) {
     let spawned = std::thread::Builder::new()
@@ -1497,7 +1497,7 @@ mod tests {
 
     /// `FindProcessCurrentUser` 只按**进程名**匹配：传全路径时它永远返回 1
     /// （"没有在跑"），整段等待逻辑会被静默跳过，直接落到 Tauri 的强杀弹窗。
-    /// 2026-09-16 探针实测（artifacts/nsis-probe/micontrol-findproc-probe2-result.txt）：
+    /// 2026-09-16 探针实测：
     /// 裸名 `micontrol.exe` → 0（在跑），全路径 `C:\...\micontrol.exe` → 1（不在跑）。
     #[test]
     fn installer_hook_looks_up_processes_by_bare_name() {
@@ -1515,7 +1515,7 @@ mod tests {
     /// `System::Call` 的输出寄存器**大小写敏感**：`.R8` 写 `$R8`，`.r8` 写 `$8`。
     /// 旧实现用 `.r8` 却判断 `$R8`（永远是空值，而空值 `!= 0` 在 NSIS 里为真），
     /// 于是"事件存在"分支恒真，旧版检测从来没生效过。
-    /// 2026-09-16 探针实测（artifacts/nsis-probe/micontrol-probe3-result.txt）：
+    /// 2026-09-16 探针实测：
     /// `.R8` 成功 → `916`，事件不存在 → `0`；`.r8` 写进的是 `$8`。
     #[test]
     fn installer_hook_reads_the_register_it_writes() {

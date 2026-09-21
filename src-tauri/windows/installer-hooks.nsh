@@ -25,8 +25,8 @@
 ; 蓝牙栈进入僵死态：此后所有 WinRT 入口（`GetRadiosAsync`、设备查询、
 ; `FromBluetoothAddressAsync`）一律返回 `0x80070008`；应用内全部自动恢复手段
 ; （普通重连 / 无线电 Off/On / 提权 PnP 重启）与睡眠都无效，**只有重启电脑能恢复**
-; （2026-09-16 现场逐项实测，见 Bugs/2026-09-16-ble-stack-resource-exhaustion-recovery-ineffective.md）。
-; AGENTS.md 已把这条列为「部署不得强杀正在连接的应用」（2026-09-05 实证）。
+; （2026-09-16 现场逐项实测）。
+; 原则：部署不得强杀正在连接的应用（2026-09-05 实证）。
 ;
 ; 注意（升级 CLI 时必须复核）：tauri `dev` 分支已把该宏改成走 Restart Manager
 ; （`RSTRTMGR::RmShutdown` + `RmForceShutdown`，交互取消同样是 `Abort`）。两种实现
@@ -64,19 +64,19 @@
   Push $R9
   ; 先确认是否真有实例在跑。`FindProcessCurrentUser` 的返回值语义由实测确定
   ; （0 = 在跑，1 = 不在跑；用 makensis 编译的最小探针跑出来的 ground truth，
-  ; 见 artifacts/nsis-probe/）。**旧实现把这里写成 `!= 0`，语义正好反了**：
+  ; 经最小探针程序实测确认）。**旧实现把这里写成 `!= 0`，语义正好反了**：
   ; 进程已退出时白等 6.5s，而进程还在跑（BLE 关闭最多要 5s）时反而不等，
   ; 直接落到 Tauri 的强杀弹窗——2026-09-16 用户现场看到的弹窗就是这个原因，
   ; 与"运行的是不是旧版本"无关。
   ; **必须传裸进程名，不能传全路径**：实测传 `"$INSTDIR\xxx.exe"` 时插件永远
   ; 返回 1（当作"没有在跑"），整个等待逻辑会被静默跳过（2026-09-16 探针实测，
-  ; 见 artifacts/nsis-probe/micontrol-findproc-probe2-result.txt）。Tauri 自己的
+  ; 探针结果留档）。Tauri 自己的
   ; `CheckIfAppIsRunning` 也是传裸名（installer.nsi 第 638 行）。
   nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
   Pop $R9
   ${If} $R9 = 0
     ; **寄存器大小写决定写进哪个变量**：`.R8` 写 `$R8`，`.r8` 写 `$8`（2026-09-16
-    ; 探针实测，见 artifacts/nsis-probe/micontrol-probe3-result.txt）。旧实现用 `.r8`
+    ; 探针实测）。旧实现用 `.r8`
     ; 却判断 `$R8`，后者永远是空值，而空值 `!= 0` 在 NSIS 里为真——于是"事件存在"
     ; 这个分支恒真，旧版检测从来没生效过。事件不存在时输出的是字面 `0`。
     ; 句柄返回值必须用 p（指针宽度）；用 i 在 x64 上会截断。
@@ -106,7 +106,7 @@
       ; 进程在跑但事件打不开 = 运行的是没有监听线程的旧版（0.2.10 及更早）。
       ; 两条路都不能走：
       ;   强杀 → 残留未关闭的 GATT 会话，蓝牙栈僵死，只有重启 Windows 能恢复
-      ;           （2026-09-16 逐项实测，见 Bugs/2026-09-16-ble-stack-*.md）；
+      ;           （2026-09-16 逐项实测）；
       ;   装下去 → 旧进程仍占着蓝牙链路，新版本连不上。
       ; 因此主动中止并引导走应用内更新：旧版的 `on_before_exit` 会先断开 BLE
       ; 再拉起安装器（tauri-plugin-updater 的 install_inner：on_before_exit 在
@@ -152,7 +152,7 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ; 卸载同样不得强杀正在连接的应用（AGENTS.md 同一条规则）。
+  ; 卸载同样不得强杀正在连接的应用。
   !insertmacro MiControlRequestGracefulExit uninstall
 !macroend
 

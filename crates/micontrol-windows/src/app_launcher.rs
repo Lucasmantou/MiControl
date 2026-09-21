@@ -1,4 +1,4 @@
-//! 预设应用动作（对齐 Mac `PresetApplication`）：按键映射可打开常用应用。
+//! 预设应用动作（ `PresetApplication`）：按键映射可打开常用应用。
 //!
 //! 语义与 Mac 一致：**已运行 → 恢复窗口并前置；未运行 → 启动**。
 //! 只用公开 API：注册表 App Paths 探测安装、工具帮助进程快照找已运行
@@ -27,8 +27,8 @@ pub struct PresetApp {
     pub exe_names: &'static [&'static str],
 }
 
-/// 预设应用表（对齐 Mac 预设 + Windows 常见项）。MiControl 自身排首位
-/// （对齐 Mac `PresetApplication.remoteMic`，恒为已安装）。
+/// 预设应用表。MiControl 自身排首位
+/// （恒为已安装）。
 pub const PRESET_APPS: &[PresetApp] = &[
     PresetApp {
         id: "micontrol",
@@ -846,7 +846,7 @@ mod tests {
             .find(|app| app.id == "micontrol")
             .expect("MiControl 自身应在预设表首位");
         assert!(micontrol.installed, "MiControl 自身恒为已安装");
-        assert_eq!(apps[0].id, "micontrol", "对齐 Mac：自身排首位");
+        assert_eq!(apps[0].id, "micontrol", "自身排首位");
     }
 
     /// COM 文件对话框管线（创建+标题+过滤器+选项）可用性探针；

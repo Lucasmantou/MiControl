@@ -1,13 +1,13 @@
 //! 按键映射引擎：语义边沿 → 手势识别 → 动作注入。
 //!
 //! 输入双源（见 key_gate.rs 与
-//! docs/investigations/2026-09-05-ll-swallow-vs-raw-input.md 的实证）：
+//! 内部调查档案：LL 吞键与 Raw Input 归因的实证）：
 //! 1. Raw Input 监听线程：HID 报文（usage 集合，绝对状态）与未被吞的键盘事件；
 //! 2. key_gate 钩子线程：被吞键盘事件的边沿。
 //! 两源汇入本引擎线程的 `ButtonStateMerger`（键盘/ HID 双源并集去重），
 //! 输出语义边沿驱动 [`GestureRecognizer`]。
 //!
-//! 动作语义对齐 Mac 原版：全部为 tap（DOWN+UP 连发），无按住保持；
+//! 动作语义：全部为 tap（DOWN+UP 连发），无按住保持；
 //! 按住 = 长按动作（一次 tap）或连发 tap。注入失败记录到快照，不中断引擎。
 //!
 //! 护栏：

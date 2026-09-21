@@ -129,8 +129,7 @@ impl BleRuntime {
     /// `Drop` 里的 `Shutdown` 从不出现在进程结束路径上（现场证据：全日志 21 条
     /// `ble_session_cleanup` 无一条位于进程结束处）。退出路径必须显式调用本方法。
     ///
-    /// 有界等待（AGENTS.md「归因线程、钩子线程等后台机制的偶发迟到要按必然事件
-    /// 设计」）：超时是常态路径之一而非错误路径——超时只落日志并让调用方继续
+    /// 有界等待（后台机制的偶发迟到要按必然事件设计）：超时是常态路径之一而非错误路径——超时只落日志并让调用方继续
     /// 退出，绝不无限等待。
     pub fn shutdown_blocking(&self, timeout: Duration) -> Result<(), PlatformError> {
         let started = Instant::now();
@@ -404,7 +403,7 @@ fn worker_loop(
                                         // 应用强杀后 OS 侧链路/缓存可能僵死，普通
                                         // 重试永不恢复，公开 API 中只有关开蓝牙
                                         // 无线电能触达修复；调研与验证见
-                                        // ATTRIBUTION.md 与 Testing\investigation）。
+                                        // ）。
                                         // 连续失败达标时执行；每窗口限制次数，耗尽后
                                         // 冷却再开新窗口，避免永久退化成无限普通重连。
                                         //
@@ -422,9 +421,8 @@ fn worker_loop(
                                         // 仍走 Off/On——那是无线电恢复唯一还可能有效的
                                         // 场景，兜底必须保留。
                                         //
-                                        // 证据与复算：ATTRIBUTION.md「2026-09-16 A/B
-                                        // 对照」；脚本 scripts/analyze-radio-recovery-ab.py；
-                                        // 判读标准 Testing/WindowsBleResourceRecovery.md。
+                                        // 证据与复算：2026-09-16 A/B 对照实测；
+                                        // 判读标准见内部调查档案。
                                         let error_code = ble_error_code(&error);
                                         if crate::bluetooth_radio::is_stack_exhausted(error_code) {
                                             gatt_note(format!(
@@ -1119,8 +1117,8 @@ fn ble_error_code(error: &PlatformError) -> &'static str {
         }
         // E_ABORT（0x80004004）：与资源耗尽是同一僵死态的另一种出口
         // （2026-09-16 现场：两者交替出现，恢复手段同样无效——见
-        // ATTRIBUTION.md「2026-09-16 A/B 对照」与
-        // Testing/WindowsBleResourceRecovery.md）。
+        // 2026-09-16 A/B 对照」与
+        // 内部调查档案）。
         PlatformError::WindowsApi(message)
             if message.contains("已中止操作")
                 || message.to_ascii_lowercase().contains("aborted") =>
@@ -1206,7 +1204,7 @@ fn invalidate_connection(
 
 /// 清理旧会话失败时的处理（2026-09-05 修正：旧实现直接清空首选设备并
 /// **停止自动重连**，提示"本次运行已停止自动重连"——把"清理失败"升级成
-/// "必须重启应用"，违反用户侧零介入原则（AGENTS.md 运维与自愈节）。
+/// "必须重启应用"，违反用户侧零介入原则。
 /// RC003 真机实证：链路掉线后清理失败时应用彻底躺平，直到人工重启进程
 /// 才恢复）。新行为：记录清理错误并照常排定重连——下次重连的
 /// invalidate_connection 会再次尝试清理（幂等），叠加清理的风险远小于
@@ -1341,7 +1339,7 @@ fn handle_control(
             // 仅在确有泄漏时放行到 OS——恰好只在需要时生效。
             send_input.release_stuck_f5();
             std::thread::sleep(Duration::from_millis(20));
-            // 按住说话快捷键（参考 ZSTDJan/Voice_VibeCoding）：先注入快捷键
+            // 按住说话快捷键：先注入快捷键
             // DOWN，再开始音频会话；注入失败直接中止本次会话并统一释放。
             if let Some(chord) = lock(voice_hold_hotkey).clone() {
                 let mic_baseline = wetype_mic_observation();
@@ -2158,7 +2156,7 @@ pub fn initialize_diagnostic_log(
 ///
 /// 与 `gatt_sink()` 取同一路径来源，因此 `MICONTROL_GATT_LOG` 覆盖时也返回真实目录，
 /// 不会指错地方。注意隐私边界：该路径只允许回给本机 UI，**不得写入日志内容**
-/// （日志条目里出现用户路径违反 AGENTS.md 的隐私规则）。
+/// （日志条目里出现用户路径违反隐私规则）。
 pub fn diagnostic_log_directory() -> Option<std::path::PathBuf> {
     DIAGNOSTIC_LOG_PATH
         .get()
@@ -2222,8 +2220,7 @@ fn gatt_log(kind: &str, bytes: &[u8]) {
     }
 }
 
-/// 功能点结构化诊断标记（同 MICONTROL_GATT_LOG 开关；AGENTS.md"功能点必须自带
-/// 日志"规范）：语音链路的分支决策、外部调用结果与关键耗时以 "N" 标记
+/// 功能点结构化诊断标记（同 MICONTROL_GATT_LOG 开关；日志"规范）：语音链路的分支决策、外部调用结果与关键耗时以 "N" 标记
 /// 行落盘，报障后一次日志拉取即可定位环节。格式与 gatt_log 对齐：
 /// `N <墙钟ms> len=  0 note=<结构化键值>`。
 /// 2026-09-05 起对 src-tauri 应用层公开（应用内更新流程等非 GATT 功能点
@@ -2288,7 +2285,7 @@ fn format_utc_timestamp(duration: std::time::Duration) -> String {
 /// - 检测：和弦注入后 ~700ms 读 ConsentStore 开麦时间戳验证 WeType 真的
 ///   响应了本次语音（公开可观测判据）。
 /// - 恢复（重试阶梯，全部基于 2026-09-05 16:44-17:35 七次真实休眠发作
-///   的 kb-live.log/ConsentStore 持锁解码实测，非推测常量）：
+///   的 ConsentStore 持锁解码实测，非推测常量）：
 ///   - 配置切换（ime::cycle_wetype_profile，公开 API）确实能复活钩子；
 ///   - 复活延迟实测 ∈ (300ms, ~6s]，典型 1.3-2.3s（七次发作中用户在
 ///     cycle 后 1.28/1.68/1.85/1.9/2.28s 的再按全部成功）；
@@ -2301,7 +2298,7 @@ fn format_utc_timestamp(duration: std::time::Duration) -> String {
 /// 阻塞语音会话。
 const WETYPE_CHECK_DELAY_MS: u64 = 700;
 /// 每轮重注入距上一轮 cycle 完成的等待。实测依据（2026-09-05 20:15-20:27
-/// 七次发作 + 16:44-17:35 七次，micontrol-diag.log/kb-live 解码）：复活延迟
+/// 七次发作 + 16:44-17:35 七次，诊断日志解码）：复活延迟
 /// 分布 1.4/1.45/2.24/3.2/3.4/5.3/>10.4s——[2,3] 两轮只覆盖前三种且实测
 /// 4 次重试 0 命中（用户总在重试前松开再按）；扩为 [2,3,5] 三轮覆盖除
 /// >10.4s 离群点外的全部观测值（按住约 13s 内完成整个阶梯）。

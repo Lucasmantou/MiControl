@@ -103,14 +103,14 @@ export type ButtonAction =
   | { type: "mouse_move"; direction: MoveDirection; distance: number }
   | { type: "open_app"; target: string };
 
-/** 预设应用条目（list_preset_apps 返回；对齐 Mac PresetApplication）。 */
+/** 预设应用条目（list_preset_apps 返回）。 */
 export interface PresetAppInfo {
   id: string;
   name: string;
   installed: boolean;
 }
 
-/** 每键三列（单击/双击/长按），对齐 Mac 原版 ButtonTrigger。 */
+/** 每键三列（单击/双击/长按），。 */
 export interface ButtonActions {
   single: ButtonAction;
   double: ButtonAction;

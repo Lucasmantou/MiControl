@@ -50,7 +50,7 @@ impl RemoteButton {
             .expect("ALL_BUTTONS covers every RemoteButton variant")
     }
 
-    /// 按住连发间隔（单击动作的自动重复），对齐 Mac 原版 HIDRemoteScheduler：
+    /// 按住连发间隔（单击动作的自动重复），
     /// 返回 50ms、方向键/音量± 100ms、其余按键不连发。仅当该键只配置了单击
     /// （未配置双击/长按）时由手势引擎启用。
     pub fn repeat_interval(self) -> Option<Duration> {

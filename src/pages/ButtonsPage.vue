@@ -49,7 +49,7 @@ import {
 
 const props = defineProps<{ runtime: RuntimeSnapshot | null }>();
 
-/** 画布几何：对齐 Mac RemoteMappingCanvas——高度固定 570，宽度流式
+/** 画布几何：高度固定 570，宽度流式
  * （占满容器，ResizeObserver 观测）；卡宽 = clamp((宽-260)/2, 270, 300)，
  * 与 Mac cardWidth(for:) 同公式；容器不足最小画布 800px 时由 CSS
  * --map-scale 连续缩放兜底（小于最小窗口的恢复态窗口）。 */
@@ -74,7 +74,7 @@ interface Placement {
   targetY: number;
 }
 
-/** 按键卡片布局表：对齐 Mac RemoteMappingLayout.buttonPlacements。 */
+/** 按键卡片布局表。 */
 const PLACEMENTS: Placement[] = [
   { button: "power", side: "left", anchor: [0.386, 0.099], targetY: 0.08 },
   { button: "up", side: "left", anchor: [0.502, 0.179], targetY: 0.23 },
@@ -105,7 +105,7 @@ const remoteModel = computed<RemoteModel>(
 /**
  * 不支持自定义的按键（2026-09-07 用户决策，全型号一致）：
  * 返回/音量±——RC003 上不进 Windows 输入栈（配置无法生效，2026-09-05
- * 调查归档 docs/investigations/2026-09-05-rc003-back-volume-buttons-invisible.md）；
+ * 调查归档）；；
  * RC001 上虽以 VK 0xFF 厂商键可达且可直接归因，为保持两型号行为一致而
  * 不开放配置。存量配置由后端（settings 持久化层 + 映射引擎）双重剥离。
  */
@@ -171,7 +171,7 @@ function arrowPolygon(placement: Placement): string {
   return `${tip.x.toFixed(1)},${tip.y.toFixed(1)} ${baseX.toFixed(1)},${(tip.y - 4).toFixed(1)} ${baseX.toFixed(1)},${(tip.y + 4).toFixed(1)}`;
 }
 
-/** 按键图标：SVG path 组（24x24 视窗），形状对齐 Mac RemoteMappingCanvas
+/** 按键图标：SVG path 组（24x24 视窗），形状
  * 的 SF Symbols（power/chevron/circle.circle/uturn/speaker/house/line.3/tv）。 */
 const buttonIcons: Record<RemoteButton, string[]> = {
   power: ["M12 3v8", "M7.2 6.4a7 7 0 1 0 9.6 0"],
@@ -358,14 +358,14 @@ function applyAction(action: ButtonAction): void {
   actions[target.trigger] = action;
   next.actions[target.button] = actions;
   mappings.value = next;
-  // 对齐 Mac：点击动作即自动保存生效（静默；失败时显示错误信息）。
+  // 点击动作即自动保存生效（静默；失败时显示错误信息）。
   void persist();
 }
 
 /**
- * 预设快捷键分组（对齐 Mac `ButtonActionCategory` 的 basicKeys/systemAndMedia，
+ * 预设快捷键分组（
  * 并按 Windows 语义适配：Home/End/PageUp/PageDown 属低频导航键、Mac 端基础
- * 按键列表亦无此四键，故移除；复制族从系统组移入基础组，对齐 Mac basicKeys）。
+ * 按键列表亦无此四键，故移除；复制族从系统组移入基础组）。
  */
 const PRESET_GROUPS: Array<{ label: string; items: Array<{ label: string; keys: KeyCode[] }> }> = [
   {
@@ -892,7 +892,7 @@ onUnmounted(() => {
 
 <template>
   <section class="buttons-page">
-    <!-- 头部对齐 Mac mappingPage：标题 + 启用开关相邻居左，遥控器状态最右
+    <!-- 头部：标题 + 启用开关相邻居左，遥控器状态最右
          （保存按钮移入编辑面板，与"测试一次/关闭"同排）。 -->
     <header class="page-header mapping-header">
       <div>

@@ -1,10 +1,10 @@
 //! 按住说话语音键抑制器。
 //!
-//! 背景（2026-09-04 调查实锤，Testing\investigation\remote-capture.log 取证）：
+//! 背景（2026-09-04 调查实锤）：
 //! 遥控器语音键在 HID 键盘层是 F5（VK 0x74），按住期间 F5 处于按下状态；此时
 //! 注入 左Ctrl+左Win 会被微信输入法判定为三键同按（无效和弦）而不触发语音。
-//! 参考实现（ZSTDJan / Voice_VibeCoding）均以低级键盘钩子吞掉遥控器原始 F5
-//! 解决此问题（VVC 的"F5 状态机"）。
+//! 既有实现均以低级键盘钩子吞掉遥控器原始 F5
+//! 解决此问题（按住会话状态机）。
 //!
 //! 结构（2026-09-10 加固后，单一 Raw Input 注册 + 钩子链头 bump）：
 //! - **钩子线程**：常驻 WH_KEYBOARD_LL 钩子（专职消息泵）。吞键判定只针对
@@ -12,17 +12,17 @@
 //!   （`set_session_active`，BLE 工作线程调用）、BLE 正处于连接建立/重连
 //!   窗口，或主 Raw Input 监听器在武装宽限（250ms）内观察到来自遥控器的 F5；首个
 //!   F5 在回调内有界等待 60ms 等任一武装信号（物理 F5 最坏 +60ms 延迟，
-//!   ZSTDJan 同款取舍）。
+//!   常见取舍）。
 //! - **Raw Input 归因**：由 `raw_input_windows.rs` 的进程唯一注册窗口转发。
 //!   Windows 明确规定同一进程每种 Raw Input 设备类只有最后注册的窗口能接收；
 //!   旧版在这里另建窗口会被主监听器覆盖，造成重连期间 F5 全部泄漏。
-//! - **钩子链头 bump**（VVC 技巧：先挂新钩再卸旧钩，无吞键空窗）：LL 钩子
+//! - **钩子链头 bump**（先挂新钩再卸旧钩，无吞键空窗）：LL 钩子
 //!   按"最新安装在最前"的顺序调用；若微信输入法等目标在本应用之后（重）
 //!   安装了自己的 LL 钩子，其和弦判定会先于本抑制器看到遥控器 F5，导致
 //!   和弦被"额外按键"拒绝。每次语音会话开始（`set_session_active(true)`）
 //!   与每 10 秒定时器都把本钩子重新安装到链头，保证 F5 在到达任何目标钩子
 //!   之前先被吞掉。
-//! - **防粘键配对**（2026-09-05 补，VVC"F5 状态机"同款规则：DOWN 漏进 OS
+//! - **防粘键配对**（2026-09-05 补，按住会话状态机规则：DOWN 漏进 OS
 //!   则 UP 必放行）：按下沿 60ms 有界等待超时即泄漏进 OS（归因线程偶发
 //!   迟到、应用中途启动等）；若释放沿仍按会话/武装规则吞掉，OS 键态将
 //!   永久卡在按下——粘住的 F5 会让后续所有和弦带"额外按键"被微信输入法
@@ -65,7 +65,7 @@ mod windows_impl {
     static LINK_GUARD_ACTIVE: AtomicBool = AtomicBool::new(false);
     static ARMED_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
     static SWALLOW_MASTER: AtomicBool = AtomicBool::new(false);
-    /// 抑制器决策计数（AGENTS.md 功能点日志规范；仅钩子线程原子递增，
+    /// 抑制器决策计数（仅钩子线程原子递增，
     /// 会话开始时由工作线程快照落盘——钩子线程绝不做文件 IO）。
     static F5_DOWN_SEEN: AtomicU64 = AtomicU64::new(0);
     static F5_DOWN_SWALLOWED: AtomicU64 = AtomicU64::new(0);
@@ -78,7 +78,7 @@ mod windows_impl {
     static REMOTE_HID_ACTIVITY_NOTIFY: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
     /// 防粘键配对状态（仅钩子线程读写）：0=无按住/配对未知，1=本次按住的
     /// DOWN 沿全部被本钩子吞下，2=任一 DOWN 沿已泄漏进 OS。UP 沿只在 1 时
-    /// 吞下（VVC 同款：DOWN 漏进 OS 则 UP 必放行）。
+    /// 吞下（DOWN 漏进 OS 则 UP 必放行）。
     static HOLD_PAIRING: AtomicU32 = AtomicU32::new(0);
     pub const HOLD_NONE: u32 = 0;
     pub const HOLD_SWALLOWED_ALL: u32 = 1;
@@ -208,7 +208,7 @@ mod windows_impl {
     }
 
     /// 钩子链头 bump：先挂新钩（立即成为链头），再卸旧钩——重叠安装无吞键空窗
-    /// （Voice_VibeCoding 同款技巧）。新钩安装失败时保留旧钩。
+    /// 。新钩安装失败时保留旧钩。
     fn bump_to_chain_head(current: &mut Option<HHOOK>) {
         if let Ok(new_hook) = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) }
         {
@@ -301,7 +301,7 @@ mod windows_impl {
 
     /// GATT 控制通知到达时立即武装宽限（供 BLE 回调线程调用）。
     ///
-    /// 背景（2026-09-05 21:08 实证，kb-live/live13 交叉）：遥控器闲置后
+    /// 背景（2026-09-05 21:08 实证）：遥控器闲置后
     /// 首按，应用自身被后台节流——0x04 经工作线程队列到
     /// set_session_active 的链路可拖到 ~120ms，而 F5 的 60ms 有界等待
     /// 提前超时 → F5 D 泄漏进 OS → 和弦变成 F5+Ctrl+Win 三键被微信输入法
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn up_edge_follows_down_pairing_not_session_or_armed() {
-        // UP 沿只认配对（VVC 同款防粘键：DOWN 漏进 OS 则 UP 必放行）：
+        // UP 沿只认配对（防粘键：DOWN 漏进 OS 则 UP 必放行）：
         // 全吞的按住才吞对应 UP；已泄漏/配对未知一律放行，即使会话与武装
         // 仍生效也不吞——DOWN 已进 OS，UP 跟进才能解除 OS 键态。
         assert!(super::decide(

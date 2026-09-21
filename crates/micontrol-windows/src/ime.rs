@@ -1,17 +1,16 @@
 //! 微信输入法（WeType）会话级激活。
 //!
-//! 背景（2026-09-05 持锁实验实锤，Testing\investigation\p-ime-experiment.ps1
-//! 与 examples\ime_probe_mta.rs，判据 = ConsentStore 开麦时间戳）：
+//! 背景（2026-09-05 持锁实验实锤，判据 = ConsentStore 开麦时间戳）：
 //! - WeType 的语音热键（Ctrl+Win）**只有当 WeType 是当前会话的活动输入法时
 //!   才生效**：会话切到微软拼音时注入和弦不开麦，切回 WeType 后恢复触发。
 //! - Windows 按应用记忆输入法——用户在其他应用用过别的输入法后，这些应用
 //!   的会话里 WeType 不活跃，语音键表现为"无法唤起"（与输入框聚焦无关：
 //!   桌面/资源管理器聚焦 6/6 照常触发，p-focus-experiment.ps1）。
-//! - **COM 套间陷阱（2026-09-05 MTA 探针实锤，examples\ime_probe_mta.rs）**：
+//! - **COM 套间陷阱（2026-09-05 MTA 探针实锤）**：
 //!   `ActivateProfile` 从 MTA 线程调用返回 S_OK 但**不生效**；必须从 STA
 //!   线程调用才真正切换。早期实验在 PowerShell（STA）里验证通过，部署后
 //!   应用从 BLE 工作线程（MTA）调用——修复形同虚设。
-//! - **冷切换重绑延迟（2026-09-05 真机日志实锤，kb-live.log 10:31:40 会话）**：
+//! - **冷切换重绑延迟（2026-09-05 真机日志实锤，真机日志 10:31:40 会话）**：
 //!   会话从未激活过 WeType 时，`ActivateProfile` 返回后目标应用的输入法
 //!   会话重绑是异步的——紧跟的和弦落在旧会话（LWin 穿透、无 0xFC、微信
 //!   无反应）；第二次起会话已是 WeType，立即触发。表现为"首次按失败、
@@ -69,7 +68,7 @@ pub enum WeTypeActivation {
 ///
 /// 会话级 TSF 激活作用于焦点窗口——焦点落在自己的 WebView 时，把微信
 /// 输入法切进自己的设置窗口毫无收益（听写需要目标应用的文本框），且
-/// 实证会使 WebView2 整页重载（Bugs/2026-09-12：0x04 后 ime_activation
+/// 实证会使 WebView2 整页重载（0x04 后 ime_activation
 /// 失败/成功均伴随 document_load，热路径会话零重载）。调用方据此跳过。
 fn foreground_is_self() -> bool {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
@@ -93,7 +92,7 @@ fn foreground_is_self() -> bool {
 pub fn activate_wetype_session() -> Result<WeTypeActivation, String> {
     let started = std::time::Instant::now();
     // 前台是自身 WebView 时跳过激活：TSF 会话切换实证会触发 WebView2
-    // 整页重载（Bugs/2026-09-12），且此时注入的和弦也落在自己窗口上，
+    // 整页重载，且此时注入的和弦也落在自己窗口上，
     // 激活没有任何收益。返回 Ok——这不是错误，不应置 UI last_error。
     if foreground_is_self() {
         crate::ble::gatt_note(
@@ -116,7 +115,7 @@ pub fn activate_wetype_session() -> Result<WeTypeActivation, String> {
         Ok(result) => result,
         Err(_) => Err("激活微信输入法超时（500ms）".to_owned()),
     };
-    // 功能点日志（AGENTS.md）：决策结果 + 耗时 + 前台进程，报障时一次
+    // 功能点日志：决策结果 + 耗时 + 前台进程，报障时一次
     // 日志拉取即可定位是热/冷路径、查询、激活还是等待环节。
     let outcome = match &result {
         Ok(WeTypeActivation::AlreadyActive) => "already_active",

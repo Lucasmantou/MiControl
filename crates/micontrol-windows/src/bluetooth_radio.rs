@@ -1,6 +1,6 @@
 //! 蓝牙无线电自动恢复（BLE 僵死链路的终极公开 API 手段）。
 //!
-//! 背景（2026-09-05 真机取证 + 调研，结论记入 ATTRIBUTION.md 延迟调研来源节）：
+//! 背景（2026-09-05 真机取证 + 调研，结论另有专项调研归档）：
 //! - 应用被强杀（未走正常关闭）后，Windows 侧可能残留僵死的 GATT/HID 链路
 //!   或服务缓存：FromIdAsync 与缓存特征发现仍可返回对象，但 CCCD 订阅写入
 //!   以 E_ABORT（设备不可达）失败，普通重试循环永远无法恢复。
@@ -179,8 +179,7 @@ pub fn should_cycle(consecutive_failures: u32, cycles_done: u32) -> bool {
 /// 不开关的对照组（0.62%）统计上不可区分。命中即跳过一切恢复动作，
 /// 只保留普通重连——继续开关只会空转。
 ///
-/// 证据与复算：`ATTRIBUTION.md`「2026-09-16 A/B 对照」、
-/// `Testing/WindowsBleResourceRecovery.md`、`scripts/analyze-radio-recovery-ab.py`。
+/// 证据与复算：见内部调查档案。
 pub const STACK_EXHAUSTED_ERROR_CODES: [&str; 2] =
     ["windows_resource_exhausted", "winrt_operation_aborted"];
 

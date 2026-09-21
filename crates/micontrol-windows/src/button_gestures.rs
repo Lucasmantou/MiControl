@@ -1,4 +1,4 @@
-//! 普通按键手势识别（单击/双击/长按/连发），语义对齐 Mac 原版
+//! 普通按键手势识别（单击/双击/长按/连发）
 //! `RemoteButtonGestureRecognizer` + `HIDRemoteScheduler`：
 //!
 //! - 双击窗口 300ms、长按阈值 550ms、连发起始 350ms（稳定释放闸门 600ms
@@ -23,11 +23,11 @@ use std::time::{Duration, Instant};
 use crate::raw_input::RemoteButton;
 use crate::send_input::{ButtonAction, ButtonMappings, ButtonTrigger};
 
-/// 双击判定窗口（第二击按下沿之间的最大间隔），Mac 同款。
+/// 双击判定窗口（第二击按下沿之间的最大间隔）。
 pub const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(300);
-/// 长按阈值（按住多久触发长按），Mac 同款。
+/// 长按阈值（按住多久触发长按）。
 pub const LONG_PRESS_THRESHOLD: Duration = Duration::from_millis(550);
-/// 连发起始延迟（按住多久开始重复单击），Mac 同款。
+/// 连发起始延迟（按住多久开始重复单击）。
 pub const REPEAT_START_DELAY: Duration = Duration::from_millis(350);
 
 /// 单个按键的手势配置（由按键映射推导）。
@@ -78,7 +78,7 @@ impl GestureConfig {
     }
 
     /// 原始单击路径：未配置双击/长按时单击在按下沿立即触发（零延迟，
-    /// Mac 同款），按住时按 repeat 间隔连发（无连发能力的按键不重复）。
+    /// ），按住时按 repeat 间隔连发（无连发能力的按键不重复）。
     fn raw_path(&self) -> bool {
         self.single_configured
             && !self.double_enabled

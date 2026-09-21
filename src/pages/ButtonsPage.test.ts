@@ -290,7 +290,7 @@ describe("buttons mapping page", () => {
     expect(wrapper.find(".mapping-editor").text()).toContain("确定 · 单击");
   });
 
-  it("applies a preset to the editing target and auto-persists (对齐 Mac 即时保存)", async () => {
+  it("applies a preset to the editing target and auto-persists (即时保存)", async () => {
     const wrapper = await mountPage();
     const powerCard = wrapper
       .findAll(".mapping-card")
